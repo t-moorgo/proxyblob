@@ -1,6 +1,6 @@
 package com.proxyblob.proxy;
 
-import com.proxyblob.protocol.error.ProtocolError;
+import com.proxyblob.protocol.ProtocolError;
 
 import java.util.UUID;
 
@@ -12,11 +12,11 @@ public interface PacketHandler {
 
     void receiveLoop();
 
-    ProtocolError onNew(UUID connectionId, byte[] data);
+    byte onNew(UUID connectionId, byte[] data);
 
-    ProtocolError onAck(UUID connectionId, byte[] data);
+    byte onAck(UUID connectionId, byte[] data);
 
-    ProtocolError onData(UUID connectionId, byte[] data);
+    byte onData(UUID connectionId, byte[] data);
 
-    ProtocolError onClose(UUID connectionId, byte errorCode);
+    byte onClose(UUID connectionId, byte errorCode);
 }

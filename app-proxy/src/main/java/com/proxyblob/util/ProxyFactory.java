@@ -1,7 +1,7 @@
 package com.proxyblob.util;
 
 import com.azure.storage.blob.BlobContainerClient;
-import com.proxyblob.protocol.handler.BaseHandler;
+import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.proxy.PacketHandler;
 import com.proxyblob.proxy.server.ProxyServer;
 import com.proxyblob.proxy.socks.SocksHandler;

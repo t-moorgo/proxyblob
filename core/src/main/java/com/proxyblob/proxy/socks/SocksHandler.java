@@ -1,9 +1,9 @@
 package com.proxyblob.proxy.socks;
 
-import com.proxyblob.protocol.crypto.CipherUtil;
-import com.proxyblob.protocol.error.ProtocolError;
-import com.proxyblob.protocol.handler.BaseHandler;
-import com.proxyblob.protocol.model.Connection;
+import com.proxyblob.protocol.CryptoUtil;
+import com.proxyblob.protocol.ProtocolError;
+import com.proxyblob.protocol.BaseHandler;
+import com.proxyblob.protocol.Connection;
 import com.proxyblob.proxy.PacketHandler;
 import lombok.RequiredArgsConstructor;
 
@@ -76,15 +76,23 @@ public class SocksHandler implements PacketHandler {
         Connection conn = baseHandler.getConnection(connectionId);
         if (conn == null) return ProtocolError.CONNECTION_NOT_FOUND;
 
-        try {
-            byte[] decrypted = CipherUtil.decrypt(conn.getSecretKey(), encryptedData);
-            conn.getReadBuffer().put(decrypted);
-            return ProtocolError.NONE;
-        } catch (Exception e) {
+        CryptoUtil.CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), encryptedData);
+        if (result.status() != CryptoUtil.CryptoStatus.OK) {
             baseHandler.sendClose(connectionId, ProtocolError.INVALID_CRYPTO);
             return ProtocolError.INVALID_CRYPTO;
         }
+
+        try {
+            conn.getReadBuffer().put(result.data());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            baseHandler.sendClose(connectionId, ProtocolError.THREAD_INTERRUPTED);
+            return ProtocolError.THREAD_INTERRUPTED;
+        }
+
+        return ProtocolError.NONE;
     }
+
 
     @Override
     public ProtocolError onClose(UUID connectionId, byte errorCode) {

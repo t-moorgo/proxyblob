@@ -8,7 +8,7 @@ import com.azure.storage.blob.models.BlobHttpHeaders;
 import com.azure.storage.blob.sas.BlobContainerSasPermission;
 import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 import com.azure.storage.common.sas.SasProtocol;
-import com.proxyblob.protocol.crypto.CipherUtil;
+import com.proxyblob.protocol.CryptoUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -123,7 +123,7 @@ public class StorageManager {
         try {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             blob.downloadStream(out);
-            return new String(CipherUtil.xor(out.toByteArray(), INFO_KEY), UTF_8);
+            return new String(CryptoUtil.xor(out.toByteArray(), INFO_KEY), UTF_8);
         } catch (Exception e) {
             log.warn("Failed to read agent info from container '{}': {}", container.getBlobContainerName(), e.getMessage());
             return "<unknown@host>";

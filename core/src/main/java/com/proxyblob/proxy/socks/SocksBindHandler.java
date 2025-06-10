@@ -1,7 +1,7 @@
 package com.proxyblob.proxy.socks;
 
-import com.proxyblob.protocol.error.ProtocolError;
-import com.proxyblob.protocol.model.Connection;
+import com.proxyblob.protocol.ProtocolError;
+import com.proxyblob.protocol.Connection;
 
 public class SocksBindHandler {
     public byte handle(Connection conn, byte[] data) {

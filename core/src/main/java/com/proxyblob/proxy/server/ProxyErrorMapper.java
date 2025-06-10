@@ -1,49 +1,54 @@
 package com.proxyblob.proxy.server;
 
-import com.proxyblob.protocol.error.ProtocolError;
+import com.proxyblob.protocol.ProtocolError;
 import lombok.experimental.UtilityClass;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 @UtilityClass
 public class ProxyErrorMapper {
-    private static final Map<Byte, String> ERROR_MESSAGES = new HashMap<>();
+    private static final Map<Byte, String> ERROR_MESSAGES;
 
     static {
+        Map<Byte, String> map = new HashMap<>();
+
         // General errors
-        ERROR_MESSAGES.put(ProtocolError.NONE.getCode(), "no error");
-        ERROR_MESSAGES.put(ProtocolError.INVALID_COMMAND.getCode(), "invalid command");
-        ERROR_MESSAGES.put(ProtocolError.CONTEXT_CANCELED.getCode(), "context canceled");
+        map.put(ProtocolError.ErrNone, "no error");
+        map.put(ProtocolError.ErrInvalidCommand, "invalid command");
+        map.put(ProtocolError.ErrContextCanceled, "context canceled");
 
         // Connection state errors
-        ERROR_MESSAGES.put(ProtocolError.CONNECTION_CLOSED.getCode(), "connection closed");
-        ERROR_MESSAGES.put(ProtocolError.CONNECTION_NOT_FOUND.getCode(), "connection not found");
-        ERROR_MESSAGES.put(ProtocolError.CONNECTION_EXISTS.getCode(), "connection already exists");
-        ERROR_MESSAGES.put(ProtocolError.INVALID_STATE.getCode(), "invalid connection state");
-        ERROR_MESSAGES.put(ProtocolError.PACKET_SEND_FAILED.getCode(), "failed to send packet");
-        ERROR_MESSAGES.put(ProtocolError.HANDLER_STOPPED.getCode(), "handler stopped");
-        ERROR_MESSAGES.put(ProtocolError.UNEXPECTED_PACKET.getCode(), "unexpected packet received");
+        map.put(ProtocolError.ErrConnectionClosed, "connection closed");
+        map.put(ProtocolError.ErrConnectionNotFound, "connection not found");
+        map.put(ProtocolError.ErrConnectionExists, "connection already exists");
+        map.put(ProtocolError.ErrInvalidState, "invalid connection state");
+        map.put(ProtocolError.ErrPacketSendFailed, "failed to send packet");
+        map.put(ProtocolError.ErrHandlerStopped, "handler stopped");
+        map.put(ProtocolError.ErrUnexpectedPacket, "unexpected packet received");
 
         // Transport layer errors
-        ERROR_MESSAGES.put(ProtocolError.TRANSPORT_CLOSED.getCode(), "transport closed");
-        ERROR_MESSAGES.put(ProtocolError.TRANSPORT_TIMEOUT.getCode(), "transport timeout");
-        ERROR_MESSAGES.put(ProtocolError.TRANSPORT_ERROR.getCode(), "general transport error");
+        map.put(ProtocolError.ErrTransportClosed, "transport closed");
+        map.put(ProtocolError.ErrTransportTimeout, "transport timeout");
+        map.put(ProtocolError.ErrTransportError, "general transport error");
 
         // SOCKS reply codes
-        ERROR_MESSAGES.put(ProtocolError.INVALID_SOCKS_VERSION.getCode(), "invalid SOCKS version");
-        ERROR_MESSAGES.put(ProtocolError.UNSUPPORTED_COMMAND.getCode(), "unsupported command");
-        ERROR_MESSAGES.put(ProtocolError.HOST_UNREACHABLE.getCode(), "host unreachable");
-        ERROR_MESSAGES.put(ProtocolError.CONNECTION_REFUSED.getCode(), "connection refused");
-        ERROR_MESSAGES.put(ProtocolError.NETWORK_UNREACHABLE.getCode(), "network unreachable");
-        ERROR_MESSAGES.put(ProtocolError.ADDRESS_NOT_SUPPORTED.getCode(), "address type not supported");
-        ERROR_MESSAGES.put(ProtocolError.TTL_EXPIRED.getCode(), "TTL expired");
-        ERROR_MESSAGES.put(ProtocolError.GENERAL_SOCKS_FAILURE.getCode(), "general SOCKS server failure");
-        ERROR_MESSAGES.put(ProtocolError.AUTH_FAILED.getCode(), "authentication failed");
+        map.put(ProtocolError.ErrInvalidSocksVersion, "invalid SOCKS version");
+        map.put(ProtocolError.ErrUnsupportedCommand, "unsupported command");
+        map.put(ProtocolError.ErrHostUnreachable, "host unreachable");
+        map.put(ProtocolError.ErrConnectionRefused, "connection refused");
+        map.put(ProtocolError.ErrNetworkUnreachable, "network unreachable");
+        map.put(ProtocolError.ErrAddressNotSupported, "address type not supported");
+        map.put(ProtocolError.ErrTTLExpired, "TTL expired");
+        map.put(ProtocolError.ErrGeneralSocksFailure, "general SOCKS server failure");
+        map.put(ProtocolError.ErrAuthFailed, "authentication failed");
 
         // Protocol packet errors
-        ERROR_MESSAGES.put(ProtocolError.INVALID_PACKET.getCode(), "invalid protocol packet structure");
-        ERROR_MESSAGES.put(ProtocolError.INVALID_CRYPTO.getCode(), "invalid cryptographic operation");
+        map.put(ProtocolError.ErrInvalidPacket, "invalid protocol packet structure");
+        map.put(ProtocolError.ErrInvalidCrypto, "invalid cryptographic operation");
+
+        ERROR_MESSAGES = Collections.unmodifiableMap(map);
     }
 
     public static String getMessage(byte errorCode) {

@@ -1,6 +1,6 @@
 package com.proxyblob.proxy.socks;
 
-import com.proxyblob.protocol.error.ProtocolError;
+import com.proxyblob.protocol.ProtocolError;
 import lombok.experimental.UtilityClass;
 
 import java.net.InetAddress;

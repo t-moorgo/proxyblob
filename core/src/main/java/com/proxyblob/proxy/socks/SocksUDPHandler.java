@@ -1,8 +1,8 @@
 package com.proxyblob.proxy.socks;
 
-import com.proxyblob.protocol.error.ProtocolError;
-import com.proxyblob.protocol.handler.BaseHandler;
-import com.proxyblob.protocol.model.Connection;
+import com.proxyblob.protocol.ProtocolError;
+import com.proxyblob.protocol.BaseHandler;
+import com.proxyblob.protocol.Connection;
 import com.proxyblob.protocol.model.ConnectionState;
 import lombok.RequiredArgsConstructor;
 

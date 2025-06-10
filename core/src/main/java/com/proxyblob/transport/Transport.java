@@ -1,14 +1,22 @@
 package com.proxyblob.transport;
 
-import com.proxyblob.transport.exception.TransportException;
-
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public interface Transport {
 
-    void send(AtomicBoolean cancelFlag, byte[] data) throws TransportException;
+    // Error codes (matching transport.go)
+    byte ErrNone = 0;
+    byte ErrContextCanceled = 2;
 
-    byte[] receive(AtomicBoolean cancelFlag) throws TransportException;
+    byte ErrTransportClosed = 20;
+    byte ErrTransportTimeout = 21;
+    byte ErrTransportError = 22;
 
-    boolean isClosed(Throwable e);
+    byte send(AtomicBoolean cancelFlag, byte[] data);
+
+    ReceiveResult receive(AtomicBoolean cancelFlag);
+
+    boolean isClosed(byte errorCode);
+
+    record ReceiveResult(byte[] data, byte errorCode) {}
 }

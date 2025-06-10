@@ -1,4 +1,4 @@
-package com.proxyblob.protocol.model;
+package com.proxyblob.protocol;
 
 import lombok.Getter;
 
@@ -8,13 +8,20 @@ import java.util.UUID;
 @Getter
 public class Packet {
 
-    public static final int COMMAND_SIZE = 1;
-    public static final int UUID_SIZE = 16;
-    public static final int LENGTH_SIZE = 4;
-    public static final int HEADER_SIZE = COMMAND_SIZE + UUID_SIZE + LENGTH_SIZE;
+    // Command types
+    public static final byte CmdNew = 1;
+    public static final byte CmdAck = 2;
+    public static final byte CmdData = 3;
+    public static final byte CmdClose = 4;
 
-    private final UUID connectionId;
+    // Field sizes
+    public static final int CommandSize = 1;
+    public static final int UUIDSize = 16;
+    public static final int DataLengthSize = 4;
+    public static final int HeaderSize = CommandSize + UUIDSize + DataLengthSize;
+
     private final byte command;
+    private final UUID connectionId;
     private final byte[] data;
 
     public Packet(byte command, UUID connectionId, byte[] data) {
@@ -24,22 +31,28 @@ public class Packet {
     }
 
     public byte[] encode() {
-        ByteBuffer buffer = ByteBuffer.allocate(HEADER_SIZE + data.length);
+        ByteBuffer buffer = ByteBuffer.allocate(HeaderSize + data.length);
         buffer.put(command);
         buffer.putLong(connectionId.getMostSignificantBits());
         buffer.putLong(connectionId.getLeastSignificantBits());
         buffer.putInt(data.length);
-        buffer.put(data);
+        if (data.length > 0) {
+            buffer.put(data);
+        }
         return buffer.array();
     }
 
     public static Packet decode(byte[] bytes) {
-        if (bytes == null || bytes.length < HEADER_SIZE) {
+        if (bytes == null || bytes.length < HeaderSize) {
             return null;
         }
 
         ByteBuffer buffer = ByteBuffer.wrap(bytes);
         byte command = buffer.get();
+        if (command < CmdNew || command > CmdClose) {
+            return null;
+        }
+
         long msb = buffer.getLong();
         long lsb = buffer.getLong();
         UUID uuid = new UUID(msb, lsb);

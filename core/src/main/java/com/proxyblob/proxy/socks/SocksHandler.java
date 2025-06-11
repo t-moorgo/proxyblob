@@ -1,40 +1,56 @@
 package com.proxyblob.proxy.socks;
 
-import com.proxyblob.protocol.CryptoUtil;
-import com.proxyblob.protocol.ProtocolError;
+import com.proxyblob.context.AppContext;
 import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
+import com.proxyblob.protocol.CryptoUtil;
 import com.proxyblob.proxy.PacketHandler;
-import lombok.RequiredArgsConstructor;
+import com.proxyblob.transport.Transport;
 
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
-@RequiredArgsConstructor
+import static com.proxyblob.protocol.ProtocolError.ErrAuthFailed;
+import static com.proxyblob.protocol.ProtocolError.ErrConnectionClosed;
+import static com.proxyblob.protocol.ProtocolError.ErrConnectionExists;
+import static com.proxyblob.protocol.ProtocolError.ErrConnectionNotFound;
+import static com.proxyblob.protocol.ProtocolError.ErrHandlerStopped;
+import static com.proxyblob.protocol.ProtocolError.ErrInvalidCrypto;
+import static com.proxyblob.protocol.ProtocolError.ErrInvalidPacket;
+import static com.proxyblob.protocol.ProtocolError.ErrInvalidSocksVersion;
+import static com.proxyblob.protocol.ProtocolError.ErrNone;
+import static com.proxyblob.protocol.ProtocolError.ErrUnexpectedPacket;
+import static com.proxyblob.protocol.ProtocolError.ErrUnsupportedCommand;
+import static com.proxyblob.proxy.socks.SocksConstants.Bind;
+import static com.proxyblob.proxy.socks.SocksConstants.Connect;
+import static com.proxyblob.proxy.socks.SocksConstants.NoAuth;
+import static com.proxyblob.proxy.socks.SocksConstants.UDPAssociate;
+import static com.proxyblob.proxy.socks.SocksConstants.Version5;
+
 public class SocksHandler implements PacketHandler {
 
     private final BaseHandler baseHandler;
+    private final AppContext context;
+    private final SocksBindHandler bindHandler;
     private final SocksConnectHandler connectHandler;
     private final SocksUDPHandler udpHandler;
 
-    private final ExecutorService executor = Executors.newCachedThreadPool();
-
-    public SocksHandler(BaseHandler baseHandler) {
-        this.baseHandler = baseHandler;
+    public SocksHandler(Transport transport, AppContext context) {
+        this.context = context;
+        this.baseHandler = new BaseHandler(transport, this, context);
+        this.bindHandler = new SocksBindHandler(baseHandler);
         this.connectHandler = new SocksConnectHandler(baseHandler);
         this.udpHandler = new SocksUDPHandler(baseHandler);
     }
 
     @Override
     public void start(String address) {
-        executor.submit(baseHandler::receiveLoop);
+        context.getGeneralExecutor().submit(this::receiveLoop);
     }
 
     @Override
     public void stop() {
         baseHandler.closeAllConnections();
-        baseHandler.stop();
+        context.stop();
     }
 
     @Override
@@ -43,182 +59,177 @@ public class SocksHandler implements PacketHandler {
     }
 
     @Override
-    public ProtocolError onNew(UUID connectionId, byte[] data) {
-        if (baseHandler.getConnection(connectionId) != null) {
-            return ProtocolError.CONNECTION_EXISTS;
+    public byte onAck(UUID connectionId, byte[] data) {
+        return ErrUnexpectedPacket;
+    }
+
+    @Override
+    public byte onNew(UUID connectionId, byte[] data) {
+        if (baseHandler.getConnections().containsKey(connectionId)) {
+            return ErrConnectionExists;
         }
 
         Connection conn = new Connection(connectionId);
-        baseHandler.addConnection(conn);
+        baseHandler.getConnections().put(connectionId, conn);
 
-        if (data.length >= 56) {
+        // Если data содержит nonce (24 байта) + server public key (32 байта)
+        if (data.length >= 24 + 32) {
             byte[] tmp = new byte[56];
             System.arraycopy(data, 0, tmp, 0, 56);
             conn.setSecretKey(tmp);
         }
 
-        ProtocolError err = baseHandler.sendConnAck(connectionId, data);
-        if (err != ProtocolError.NONE) {
-            return err;
+        byte errCode = baseHandler.sendConnAck(connectionId);
+        if (errCode != ErrNone) {
+            return errCode;
         }
 
-        executor.submit(() -> processConnection(conn));
-        return ProtocolError.NONE;
+        context.getGeneralExecutor().submit(() -> processConnection(conn));
+        return ErrNone;
     }
 
     @Override
-    public ProtocolError onAck(UUID connectionId, byte[] data) {
-        return ProtocolError.UNEXPECTED_PACKET;
-    }
+    public byte onData(UUID connectionId, byte[] data) {
+        Connection conn = baseHandler.getConnections().get(connectionId);
+        if (conn == null) {
+            return ErrConnectionNotFound;
+        }
 
-    @Override
-    public ProtocolError onData(UUID connectionId, byte[] encryptedData) {
-        Connection conn = baseHandler.getConnection(connectionId);
-        if (conn == null) return ProtocolError.CONNECTION_NOT_FOUND;
-
-        CryptoUtil.CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), encryptedData);
+        CryptoUtil.CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), data);
         if (result.status() != CryptoUtil.CryptoStatus.OK) {
-            baseHandler.sendClose(connectionId, ProtocolError.INVALID_CRYPTO);
-            return ProtocolError.INVALID_CRYPTO;
+            baseHandler.sendClose(connectionId, ErrInvalidCrypto);
+            return ErrInvalidCrypto;
+        }
+
+        if (context.isStopped()) {
+            return ErrConnectionClosed;
         }
 
         try {
             conn.getReadBuffer().put(result.data());
+            return ErrNone;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            baseHandler.sendClose(connectionId, ProtocolError.THREAD_INTERRUPTED);
-            return ProtocolError.THREAD_INTERRUPTED;
+            return ErrHandlerStopped;
         }
-
-        return ProtocolError.NONE;
     }
-
 
     @Override
-    public ProtocolError onClose(UUID connectionId, byte errorCode) {
-        Connection conn = baseHandler.getConnection(connectionId);
-        if (conn != null) {
-            conn.close();
-            baseHandler.removeConnection(connectionId);
+    public byte onClose(UUID connectionId, byte errorCode) {
+        Connection value = baseHandler.getConnections().get(connectionId);
+        if (value == null) {
+            return ErrNone; // Connection already removed
         }
-        return ProtocolError.NONE;
+
+        value.close();
+        baseHandler.getConnections().remove(connectionId);
+
+        return ErrNone;
     }
+
 
     private void processConnection(Connection conn) {
-        ProtocolError err;
+        byte errCode;
 
-        err = handleAuthNegotiation(conn);
-        if (err != ProtocolError.NONE) {
-            baseHandler.sendClose(conn.getId(), err);
+        errCode = handleAuthNegotiation(conn);
+        if (errCode != ErrNone) {
+            baseHandler.sendClose(conn.getId(), errCode);
             return;
         }
 
-        err = handleCommand(conn);
-        if (err != ProtocolError.NONE) {
-            baseHandler.sendClose(conn.getId(), err);
+        errCode = handleCommand(conn);
+        if (errCode != ErrNone) {
+            baseHandler.sendClose(conn.getId(), errCode);
             return;
         }
 
-        handleDataTransfer(conn);
+        errCode = handleDataTransfer(conn);
+        if (errCode != ErrNone) {
+            baseHandler.sendClose(conn.getId(), errCode);
+        }
     }
 
-    private ProtocolError handleAuthNegotiation(Connection conn) {
+    private byte handleAuthNegotiation(Connection conn) {
         try {
-            byte[] methods = conn.getReadBuffer().take();
+            byte[] methods = conn.getReadBuffer().take(); // блокирующий вызов
+
             boolean noAuthSupported = false;
             for (byte b : methods) {
-                if (b == SocksConstants.NO_AUTH) {
+                if (b == NoAuth) {
                     noAuthSupported = true;
                     break;
                 }
             }
 
             if (!noAuthSupported) {
-                sendError(conn, ProtocolError.AUTH_FAILED);
-                return ProtocolError.AUTH_FAILED;
+                SocksErrorUtil.sendError(baseHandler, conn, ErrAuthFailed);
+                return ErrAuthFailed;
             }
 
-            return baseHandler.sendData(conn.getId(), new byte[]{SocksConstants.VERSION_5, SocksConstants.NO_AUTH});
+            byte[] response = new byte[]{Version5, NoAuth};
+            return baseHandler.sendData(conn.getId(), response);
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return ProtocolError.HANDLER_STOPPED;
+
+            if (conn.getClosed().get()) {
+                return ErrConnectionClosed;
+            }
+
+            if (context.isStopped()) {
+                return ErrHandlerStopped;
+            }
+
+            return ErrHandlerStopped;
         }
     }
 
-    private ProtocolError handleCommand(Connection conn) {
+    private byte handleCommand(Connection conn) {
         try {
-            byte[] cmdData = conn.getReadBuffer().take();
+            byte[] cmdData = conn.getReadBuffer().take(); // блокирующий вызов
 
             if (cmdData.length < 4) {
-                sendError(conn, ProtocolError.INVALID_PACKET);
-                return ProtocolError.INVALID_PACKET;
+                SocksErrorUtil.sendError(baseHandler, conn, ErrInvalidPacket);
+                return ErrInvalidPacket;
             }
 
-            if (cmdData[0] != SocksConstants.VERSION_5) {
-                sendError(conn, ProtocolError.INVALID_SOCKS_VERSION);
-                return ProtocolError.INVALID_SOCKS_VERSION;
+            if (cmdData[0] != Version5) {
+                SocksErrorUtil.sendError(baseHandler, conn, ErrInvalidSocksVersion);
+                return ErrInvalidSocksVersion;
             }
 
             byte command = cmdData[1];
             return switch (command) {
-                case SocksConstants.CONNECT -> handleConnect(conn, cmdData);
-                case SocksConstants.BIND -> handleBind(conn, cmdData);
-                case SocksConstants.UDP_ASSOCIATE -> handleUDPAssociate(conn);
+                case Connect -> connectHandler.handle(conn, cmdData);
+                case Bind -> bindHandler.handle(conn, cmdData);
+                case UDPAssociate -> udpHandler.handle(conn);
                 default -> {
-                    sendError(conn, ProtocolError.UNSUPPORTED_COMMAND);
-                    yield ProtocolError.UNSUPPORTED_COMMAND;
+                    SocksErrorUtil.sendError(baseHandler, conn, ErrUnsupportedCommand);
+                    yield ErrUnsupportedCommand;
                 }
             };
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return ProtocolError.HANDLER_STOPPED;
-        }
-    }
 
-    private void handleDataTransfer(Connection conn) {
-        while (conn != null && !conn.isClosed()) {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
+            if (conn.getClosed().get()) {
+                return ErrConnectionClosed;
             }
+
+            if (context.isStopped()) {
+                return ErrHandlerStopped;
+            }
+
+            return ErrHandlerStopped;
         }
     }
 
-    public void sendError(Connection conn, ProtocolError errCode) {
-        byte reply = switch (errCode) {
-            case NONE -> SocksConstants.SUCCEEDED;
-            case NETWORK_UNREACHABLE -> SocksConstants.NETWORK_UNREACHABLE;
-            case HOST_UNREACHABLE -> SocksConstants.HOST_UNREACHABLE;
-            case CONNECTION_REFUSED -> SocksConstants.CONNECTION_REFUSED;
-            case TTL_EXPIRED -> SocksConstants.TTL_EXPIRED;
-            case UNSUPPORTED_COMMAND -> SocksConstants.COMMAND_NOT_SUPPORTED;
-            case ADDRESS_NOT_SUPPORTED -> SocksConstants.ADDRESS_TYPE_NOT_SUPPORTED;
-            case AUTH_FAILED -> SocksConstants.NO_ACCEPTABLE_METHODS;
-            default -> SocksConstants.GENERAL_FAILURE;
-        };
-
-        byte[] response = {
-                SocksConstants.VERSION_5,
-                reply,
-                0x00,
-                SocksConstants.IPV4,
-                0, 0, 0, 0, 0, 0
-        };
-
-        baseHandler.sendData(conn.getId(), response);
-    }
-
-    private ProtocolError handleConnect(Connection conn, byte[] cmdData) {
-        return ProtocolError.fromByte(connectHandler.handle(conn, cmdData));
-    }
-
-    private ProtocolError handleBind(Connection conn, byte[] cmdData) {
-        return ProtocolError.UNSUPPORTED_COMMAND;
-    }
-
-    private ProtocolError handleUDPAssociate(Connection conn) {
-        return ProtocolError.fromByte(udpHandler.handle(conn));
+    private byte handleDataTransfer(Connection conn) {
+        try {
+            conn.awaitClose(); // блокируемся до закрытия соединения
+            return ErrNone;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return ErrHandlerStopped;
+        }
     }
 }

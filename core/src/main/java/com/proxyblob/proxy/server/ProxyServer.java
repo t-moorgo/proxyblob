@@ -7,6 +7,7 @@ import com.proxyblob.protocol.CryptoUtil;
 import com.proxyblob.protocol.ProtocolError;
 import com.proxyblob.proxy.PacketHandler;
 import com.proxyblob.transport.Transport;
+import lombok.Getter;
 import org.bouncycastle.crypto.params.X25519PrivateKeyParameters;
 import org.bouncycastle.crypto.params.X25519PublicKeyParameters;
 
@@ -28,12 +29,12 @@ import java.util.concurrent.TimeUnit;
 import static com.proxyblob.protocol.Connection.StateConnected;
 import static com.proxyblob.protocol.Connection.StateNew;
 
+@Getter
 public class ProxyServer implements PacketHandler {
 
     private final BaseHandler baseHandler;
     private ServerSocket listener;
     private final AppContext context;
-
 
     // Конструктор
     public ProxyServer(Transport transport, AppContext context) {

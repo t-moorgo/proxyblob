@@ -1,9 +1,9 @@
 package com.proxyblob.transport;
 
 import com.azure.core.util.BinaryData;
-import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.models.BlobProperties;
 import com.azure.storage.blob.models.BlobStorageException;
+import com.azure.storage.blob.specialized.BlockBlobClient;
 import com.proxyblob.context.AppContext;
 import lombok.RequiredArgsConstructor;
 
@@ -13,8 +13,8 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class BlobTransport implements Transport {
 
-    private final BlobClient readBlob;
-    private final BlobClient writeBlob;
+    private final BlockBlobClient readBlob;
+    private final BlockBlobClient writeBlob;
     private final AppContext context;
 
     private static final Duration InitialRetryDelay = Duration.ofMillis(50);
@@ -36,7 +36,7 @@ public class BlobTransport implements Transport {
         return errorCode == Transport.ErrTransportClosed;
     }
 
-    private byte writeBlob(BlobClient blob, byte[] data) {
+    private byte writeBlob(BlockBlobClient blob, byte[] data) {
         Duration delay = InitialRetryDelay;
 
         while (true) {
@@ -83,7 +83,7 @@ public class BlobTransport implements Transport {
         }
     }
 
-    private ReceiveResult waitForData(BlobClient blob) {
+    private ReceiveResult waitForData(BlockBlobClient blob) {
         Duration delay = InitialRetryDelay;
 
         while (true) {
@@ -126,7 +126,7 @@ public class BlobTransport implements Transport {
         }
     }
 
-    private CheckResult isBlobEmpty(BlobClient blob) {
+    private CheckResult isBlobEmpty(BlockBlobClient blob) {
         if (context.isStopped()) {
             return new CheckResult(false, Transport.ErrContextCanceled);
         }
@@ -142,7 +142,7 @@ public class BlobTransport implements Transport {
 
     private record CheckResult(boolean isEmpty, byte errorCode) {}
 
-    private byte clearBlob(BlobClient blob) {
+    private byte clearBlob(BlockBlobClient blob) {
         Duration delay = InitialRetryDelay;
 
         while (true) {

@@ -32,6 +32,14 @@
             <groupId>com.proxyblob</groupId>
             <artifactId>core</artifactId>
         </dependency>
+        <dependency>
+            <groupId>de.vandermeer</groupId>
+            <artifactId>asciitable</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

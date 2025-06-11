@@ -3,6 +3,7 @@ package com.proxyblob.protocol;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.net.DatagramSocket;
 import java.net.Socket;
 import java.time.Instant;
 import java.util.UUID;
@@ -31,6 +32,8 @@ public class Connection {
     // Conn holds the network connection (optional)
     private Socket socket;
 
+    private DatagramSocket datagramSocket;
+
     // ReadBuffer receives data from the remote endpoint
     private final BlockingQueue<byte[]> readBuffer;
 
@@ -42,6 +45,9 @@ public class Connection {
 
     // LastActivity tracks most recent data transfer
     private volatile Instant lastActivity;
+
+    private final Object closeSignal = new Object();
+
 
     // SecretKey holds encryption key for secure communication
     private byte[] secretKey;
@@ -62,6 +68,10 @@ public class Connection {
         state = StateClosed;
 
         if (closed.compareAndSet(false, true)) {
+            synchronized (closeSignal) {
+                closeSignal.notifyAll(); // 🔔 разблокирует ожидающих
+            }
+
             if (socket != null && !socket.isClosed()) {
                 try {
                     socket.close();
@@ -73,4 +83,13 @@ public class Connection {
 
         return ErrNone;
     }
+
+    public void awaitClose() throws InterruptedException {
+        synchronized (closeSignal) {
+            while (!closed.get()) {
+                closeSignal.wait(); // 🔒 блокировка до закрытия
+            }
+        }
+    }
+
 }

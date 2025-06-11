@@ -1,111 +1,212 @@
 package com.proxyblob;
 
-import com.azure.storage.blob.BlobClient;
+import com.azure.core.util.Context;
 import com.azure.storage.blob.BlobContainerClient;
-import com.azure.storage.blob.BlobServiceClient;
-import com.azure.storage.blob.BlobServiceClientBuilder;
+import com.azure.storage.blob.BlobContainerClientBuilder;
 import com.azure.storage.blob.models.BlobHttpHeaders;
+import com.azure.storage.blob.models.BlobStorageException;
+import com.azure.storage.blob.options.BlockBlobSimpleUploadOptions;
 import com.azure.storage.blob.specialized.BlockBlobClient;
+import com.proxyblob.context.AppContext;
 import com.proxyblob.protocol.CryptoUtil;
-import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.proxy.socks.SocksHandler;
 import com.proxyblob.transport.BlobTransport;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 import java.io.ByteArrayInputStream;
-import java.net.URI;
-import java.net.URLDecoder;
+import java.net.InetAddress;
+import java.net.URL;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 @Getter
+@RequiredArgsConstructor
 public class Agent {
 
-    private final BlobContainerClient container;
-    private final BaseHandler baseHandler;
-    private final SocksHandler socksHandler;
+    public static final int Success = 0;
+    public static final int ErrContextCanceled = 1;
+    public static final int ErrNoConnectionString = 2;
+    public static final int ErrConnectionStringError = 3;
+    public static final int ErrInfoBlobError = 4;
+    public static final int ErrContainerNotFound = 5;
 
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private static final String InfoBlobName = "info";
+    private static final String RequestBlobName = "request";
+    private static final String ResponseBlobName = "response";
+    private static final byte[] InfoKey = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xB1, 0x0B};
 
-    private static final byte[] INFO_KEY = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xB1, 0x0B};
-    private static final int HEALTH_CHECK_INTERVAL = 30; // seconds
+    private final BlobContainerClient containerClient; // аналог azblob.ContainerURL
+    private final SocksHandler handler;                // аналог proxy.SocksHandler
 
-    public Agent(String encodedConnString) throws Exception {
-        URI uri = parseAndValidateUri(encodedConnString);
-        this.container = initBlobContainer(uri);
-        this.baseHandler = initHandler();
-        this.socksHandler = new SocksHandler(baseHandler);
-        this.baseHandler.registerPacketHandler(socksHandler);
-    }
+    public AgentCreationResult create(AppContext context, String connString) {
+        ParseResult parsed = parseConnectionString(connString);
+        if (parsed.errorCode() != Success) {
+            return new AgentCreationResult(null, parsed.errorCode());
+        }
 
-    public void start() {
-        updateInfoBlob();
-        baseHandler.start();
-        startHealthCheck();
-    }
-
-    public void stop() {
-        scheduler.shutdownNow();
-        baseHandler.stop();
-    }
-
-    public void updateInfoBlob() {
         try {
-            String info = System.getProperty("user.name") + "@" + java.net.InetAddress.getLocalHost().getHostName();
-            byte[] encrypted = CryptoUtil.xor(info.getBytes(StandardCharsets.UTF_8), INFO_KEY);
+            BlobContainerClient containerClient = new BlobContainerClientBuilder()
+                    .endpoint(parsed.storageUrl())
+                    .sasToken(parsed.sasToken())
+                    .containerName(parsed.containerId())
+                    .buildClient();
 
-            BlockBlobClient blob = container.getBlobClient("info").getBlockBlobClient();
-            blob.upload(new ByteArrayInputStream(encrypted), encrypted.length, true);
-            blob.setHttpHeaders(new BlobHttpHeaders().setContentType("text/plain"));
+            BlockBlobClient requestBlob = containerClient.getBlobClient(RequestBlobName).getBlockBlobClient();
+            BlockBlobClient responseBlob = containerClient.getBlobClient(ResponseBlobName).getBlockBlobClient();
+
+            BlobTransport transport = new BlobTransport(requestBlob, responseBlob, context);
+            SocksHandler handler = new SocksHandler(transport, context);
+
+            Agent agent = new Agent(containerClient, handler);
+            return new AgentCreationResult(agent, Success);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to write info blob", e);
+            return new AgentCreationResult(null, ErrConnectionStringError);
         }
     }
 
-    private URI parseAndValidateUri(String encodedConnString) throws Exception {
-        byte[] decodedBytes = Base64.getUrlDecoder().decode(encodedConnString);
-        String decoded = new String(decodedBytes, StandardCharsets.UTF_8);
-        return new URI(decoded);
+    public record AgentCreationResult(Agent agent, int status) {
     }
 
-    private BlobContainerClient initBlobContainer(URI uri) {
-        String containerName = uri.getPath().replaceFirst("/", "");
-        String sasToken = URLDecoder.decode(uri.getRawQuery(), StandardCharsets.UTF_8);
-        String endpoint = uri.getScheme() + "://" + uri.getHost();
-
-        BlobServiceClient client = new BlobServiceClientBuilder()
-                .endpoint(endpoint)
-                .sasToken(sasToken)
-                .buildClient();
-
-        BlobContainerClient containerClient = client.getBlobContainerClient(containerName);
-        if (!containerClient.exists()) {
-            throw new IllegalStateException("Container not found: " + containerName);
+    public int start(AppContext context) {
+        // Запись agent info в blob
+        int result = writeInfoBlob();
+        if (result != Success) {
+            stop();
+            return ErrContainerNotFound;
         }
 
-        return containerClient;
-    }
+        // Запускаем мониторинг контейнера
+        context.getGeneralExecutor().submit(() -> healthCheck(context));
 
-    private BaseHandler initHandler() {
-        BlobClient read = container.getBlobClient("request");
-        BlobClient write = container.getBlobClient("response");
-        return new BaseHandler(new BlobTransport(read, write));
-    }
+        // Запускаем обработчик SOCKS
+        handler.start("");
 
-    private void startHealthCheck() {
-        scheduler.scheduleAtFixedRate(() -> {
+        // Ждём завершения по флагу контекста
+        while (!context.isStopped()) {
             try {
-                if (!container.getBlobClient("info").exists()) {
+                Thread.sleep(200); // Можно уменьшить/увеличить по ситуации
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return ErrContextCanceled;
+            }
+        }
+
+        return Success;
+    }
+
+    private void stop() {
+        handler.stop();
+    }
+
+    private void healthCheck(AppContext context) {
+        ScheduledExecutorService scheduler = context.getScheduler();
+        Runnable task = () -> {
+            if (context.isStopped()) {
+                if (!scheduler.isShutdown()) {
+                    scheduler.shutdown();
+                }
+                return;
+            }
+
+            try {
+                BlockBlobClient blob = containerClient
+                        .getBlobClient(InfoBlobName)
+                        .getBlockBlobClient();
+
+                blob.getProperties(); // Попытка получить метаданные блоба
+
+            } catch (BlobStorageException e) {
+                String code = e.getErrorCode().toString();
+                if ("ContainerNotFound".equals(code) || "ContainerBeingDeleted".equals(code)) {
                     stop();
-                    throw new IllegalStateException("Health check failed: 'info' blob not found");
                 }
             } catch (Exception e) {
-                stop();
-                throw new RuntimeException("Health check failed", e);
+                // Прочие ошибки — можно залогировать позже
             }
-        }, HEALTH_CHECK_INTERVAL, HEALTH_CHECK_INTERVAL, TimeUnit.SECONDS);
+        };
+
+        scheduler.scheduleAtFixedRate(task, 0, 30, TimeUnit.SECONDS);
+    }
+
+    private int writeInfoBlob() {
+        try {
+            String info = getCurrentInfo();
+            byte[] encrypted = CryptoUtil.xor(info.getBytes(StandardCharsets.UTF_8), InfoKey);
+
+            BlockBlobClient blob = containerClient.getBlobClient(InfoBlobName).getBlockBlobClient();
+
+            BlockBlobSimpleUploadOptions options = new BlockBlobSimpleUploadOptions(
+                    new ByteArrayInputStream(encrypted), encrypted.length)
+                    .setHeaders(new BlobHttpHeaders().setContentType("text/plain"));
+
+            blob.uploadWithResponse(options, null, Context.NONE);
+            return Success;
+
+        } catch (BlobStorageException e) {
+            if ("ContainerNotFound".equals(e.getErrorCode().toString()) ||
+                    "ContainerBeingDeleted".equals(e.getErrorCode().toString())) {
+                return ErrContainerNotFound;
+            }
+            return ErrInfoBlobError;
+
+        } catch (Exception e) {
+            return ErrInfoBlobError;
+        }
+    }
+
+    private ParseResult parseConnectionString(String connString) {
+        if (connString == null || connString.isEmpty()) {
+            return new ParseResult(null, null, null, ErrNoConnectionString);
+        }
+
+        try {
+            byte[] decodedBytes = Base64.getUrlDecoder().decode(connString);
+            String decoded = new String(decodedBytes, StandardCharsets.UTF_8);
+
+            URL url = new URL(decoded);
+            String path = url.getPath();
+            if (path == null || path.length() <= 1) {
+                return error();
+            }
+
+            String containerId = path.substring(1); // Remove leading '/'
+            String query = url.getQuery();
+            if (query == null || query.isEmpty()) {
+                return error();
+            }
+
+            String storageUrl = url.getProtocol() + "://" + url.getHost();
+            return new ParseResult(storageUrl, containerId, query, Success);
+        } catch (Exception e) {
+            return error();
+        }
+    }
+
+    private ParseResult error() {
+        return new ParseResult(null, null, null, ErrConnectionStringError);
+    }
+
+    private String getCurrentInfo() {
+        String hostname;
+        try {
+            hostname = InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            hostname = "unknown";
+        }
+
+        String username = System.getProperty("user.name");
+        if (username == null || username.isEmpty()) {
+            username = "unknown";
+        }
+
+        return username + "@" + hostname;
+    }
+
+    private record ParseResult(String storageUrl, String containerId, String sasToken, int errorCode) {
     }
 }
+

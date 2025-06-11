@@ -1,132 +1,255 @@
 package com.proxyblob.storage;
 
-import com.azure.core.util.BinaryData;
-import com.azure.storage.blob.BlobClient;
+import com.azure.core.http.rest.PagedIterable;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
+import com.azure.storage.blob.BlobServiceClientBuilder;
+import com.azure.storage.blob.models.BlobContainerItem;
+import com.azure.storage.blob.models.BlobErrorCode;
 import com.azure.storage.blob.models.BlobHttpHeaders;
+import com.azure.storage.blob.models.BlobStorageException;
 import com.azure.storage.blob.sas.BlobContainerSasPermission;
 import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
+import com.azure.storage.blob.specialized.BlockBlobClient;
+import com.azure.storage.common.StorageSharedKeyCredential;
 import com.azure.storage.common.sas.SasProtocol;
+import com.proxyblob.dto.ContainerCreationResult;
+import com.proxyblob.state.AppState;
+import com.proxyblob.constants.Constants;
+import com.proxyblob.dto.ContainerInfo;
+import com.proxyblob.config.Config;
 import com.proxyblob.protocol.CryptoUtil;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import com.proxyblob.proxy.server.ProxyServer;
+import lombok.Getter;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import static com.proxyblob.constants.Constants.InfoBlobName;
+import static com.proxyblob.constants.Constants.InfoKey;
 
-@Slf4j
-@RequiredArgsConstructor
+@Getter
 public class StorageManager {
 
     private final BlobServiceClient serviceClient;
+    private final String accountName;
+    private final String accountKey;
 
-    private static final byte[] INFO_KEY = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xB1, 0x0B};
+    public StorageManager(Config config) {
+        this.accountName = config.getStorageAccountName();
+        this.accountKey = config.getStorageAccountKey();
 
-    public String createAgentContainer(Duration expiry) {
+        String endpoint = config.getStorageURL() != null && !config.getStorageURL().isEmpty()
+                ? config.getStorageURL() + "/" + accountName
+                : String.format("https://%s.blob.core.windows.net", accountName);
+
+        StorageSharedKeyCredential credential = new StorageSharedKeyCredential(accountName, accountKey);
+        this.serviceClient = new BlobServiceClientBuilder()
+                .endpoint(endpoint)
+                .credential(credential)
+                .buildClient();
+    }
+
+    public ContainerCreationResult createAgentContainer(Duration expiry) {
         String containerId = UUID.randomUUID().toString();
-        BlobContainerClient container = serviceClient.getBlobContainerClient(containerId);
-        container.create();
+        BlobContainerClient containerClient = serviceClient.getBlobContainerClient(containerId);
 
-        for (String name : List.of("info", "request", "response")) {
-            BlobClient blob = container.getBlobClient(name);
-            blob.upload(BinaryData.fromBytes(new byte[0]), true);
-            blob.setHttpHeaders(new BlobHttpHeaders().setContentType("application/octet-stream"));
-            blob.setMetadata(Map.of("created", Instant.now().toString()));
+        try {
+            containerClient.create();
+
+            List<String> blobNames = List.of(Constants.InfoBlobName, Constants.RequestBlobName, Constants.ResponseBlobName);
+
+            for (String blobName : blobNames) {
+                BlockBlobClient blobClient = containerClient
+                        .getBlobClient(blobName)
+                        .getBlockBlobClient();
+
+                Map<String, String> metadata = Map.of(
+                        "created", OffsetDateTime.now().format(DateTimeFormatter.ISO_INSTANT)
+                );
+
+                blobClient.upload(
+                        new ByteArrayInputStream(new byte[0]),
+                        0,
+                        true
+                );
+                blobClient.setHttpHeaders(new BlobHttpHeaders().setContentType("application/octet-stream"));
+                blobClient.setMetadata(metadata);
+            }
+
+            // Генерация SAS токена
+            String sasToken = generateSasToken(containerId, expiry);
+
+            // Формирование connection string
+            URI baseUri = new URI(serviceClient.getAccountUrl());
+            String connectionString = baseUri.resolve("/" + containerId) + "?" + sasToken;
+
+            return new ContainerCreationResult(containerId, connectionString);
+        } catch (Exception e) {
+            // Удаляем контейнер при ошибке
+            try {
+                containerClient.delete();
+            } catch (Exception ignored) {
+            }
+            throw new RuntimeException("Failed to create agent container", e);
         }
-
-        String sas = generateSasToken(containerId, expiry);
-        String baseUri = serviceClient.getAccountUrl() + "/" + containerId;
-        return baseUri + "?" + sas;
-    }
-
-    public List<ContainerInfo> listAgentContainers() {
-        return serviceClient.listBlobContainers()
-                .stream()
-                .map(containerItem -> buildContainerInfo(containerItem.getName()))
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .collect(Collectors.toList());
-    }
-
-    public boolean validateAgent(String containerId) {
-        BlobContainerClient container = serviceClient.getBlobContainerClient(containerId);
-        return container.exists() && container.getBlobClient("info").exists();
-    }
-
-    public String getAgentInfo(String containerId) {
-        return getAgentInfo(serviceClient.getBlobContainerClient(containerId));
-    }
-
-    public void deleteAgentContainer(String containerId) {
-        BlobContainerClient container = serviceClient.getBlobContainerClient(containerId);
-        if (container.exists()) {
-            container.delete();
-        }
-    }
-
-    public BlobContainerClient getContainer(String containerId) {
-        return serviceClient.getBlobContainerClient(containerId);
     }
 
     public String generateSasToken(String containerName, Duration expiry) {
+        // Начало времени — 5 минут назад, чтобы избежать проблем со сдвигом времени
+        OffsetDateTime startTime = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(5);
+
+        // Время истечения действия токена
+        OffsetDateTime expiryTime = OffsetDateTime.now(ZoneOffset.UTC).plus(expiry);
+
+        // Права доступа (чтение и запись)
+        BlobContainerSasPermission permissions = new BlobContainerSasPermission()
+                .setReadPermission(true)
+                .setWritePermission(true);
+
+        // Формируем параметры SAS
+        BlobServiceSasSignatureValues sasValues = new BlobServiceSasSignatureValues(expiryTime, permissions)
+                .setStartTime(startTime)
+                .setProtocol(SasProtocol.HTTPS_HTTP)
+                .setContainerName(containerName);
+
+        // Генерация токена
         BlobContainerClient containerClient = serviceClient.getBlobContainerClient(containerName);
-
-        BlobServiceSasSignatureValues values = new BlobServiceSasSignatureValues(
-                OffsetDateTime.now().plus(expiry),
-                new BlobContainerSasPermission()
-                        .setReadPermission(true)
-                        .setWritePermission(true)
-        ).setStartTime(OffsetDateTime.now().minusMinutes(5))
-                .setProtocol(SasProtocol.HTTPS_HTTP);
-
-        return containerClient.generateSas(values);
+        return containerClient.generateSas(sasValues);
     }
 
-    private Optional<ContainerInfo> buildContainerInfo(String containerName) {
-        try {
-            BlobContainerClient container = serviceClient.getBlobContainerClient(containerName);
+    public List<ContainerInfo> listAgentContainers() {
+        List<ContainerInfo> containers = new ArrayList<>();
 
-            String agentInfo = getAgentInfo(container);
-            Instant createdAt = container.getProperties().getLastModified().toInstant();
+        // Итерация по всем контейнерам
+        PagedIterable<BlobContainerItem> containerItems = serviceClient.listBlobContainers();
+        for (BlobContainerItem containerItem : containerItems) {
+            String containerName = containerItem.getName();
+            BlobContainerClient containerClient = serviceClient.getBlobContainerClient(containerName);
 
-            BlobClient responseBlob = container.getBlobClient("response");
-            Instant lastActivity = responseBlob.exists()
-                    ? responseBlob.getProperties().getLastModified().toInstant()
-                    : createdAt;
+            // Попытка получить InfoBlob
+            BlockBlobClient infoBlob = containerClient
+                    .getBlobClient(Constants.InfoBlobName)
+                    .getBlockBlobClient();
 
-            return Optional.of(new ContainerInfo(
+            if (!infoBlob.exists()) {
+                continue;
+            }
+
+            String agentInfo;
+            try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+                infoBlob.download(outputStream);
+                byte[] decrypted = CryptoUtil.xor(outputStream.toByteArray(), Constants.InfoKey);
+                agentInfo = new String(decrypted, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                // Можно залогировать через логгер
+                continue;
+            }
+
+            // Попытка получить дату последней активности из ResponseBlob
+            OffsetDateTime lastActivity;
+            try {
+                BlockBlobClient responseBlob = containerClient
+                        .getBlobClient(Constants.ResponseBlobName)
+                        .getBlockBlobClient();
+
+                lastActivity = responseBlob.getProperties().getLastModified();
+            } catch (BlobStorageException e) {
+                // Если не удалось — используем дату создания контейнера
+                lastActivity = containerItem.getProperties().getLastModified();
+            }
+
+            // Определение порта активного прокси (если запущен)
+            String proxyPort = null;
+            if (AppState.isProxyRunning(containerName)) {
+                ProxyServer proxy = AppState.getProxy(containerName);
+                if (proxy != null && proxy.getListener() != null) {
+                    try {
+                        proxyPort = Integer.toString(proxy.getListener().getLocalPort());
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+
+            // Добавление в список
+            containers.add(new ContainerInfo(
                     containerName,
                     agentInfo,
-                    "", // port will be filled later
-                    createdAt,
-                    lastActivity
+                    proxyPort,
+                    containerItem.getProperties().getLastModified().toInstant(),
+                    lastActivity.toInstant()
             ));
+        }
 
-        } catch (Exception e) {
-            log.warn("Skipping invalid container '{}': {}", containerName, e.getMessage());
-            return Optional.empty();
+        return containers;
+    }
+
+    public void deleteAgentContainer(String containerId) {
+        // Завершение запущенного прокси для этого контейнера (если есть)
+        if (AppState.isProxyRunning(containerId)) {
+            ProxyServer proxyServer = AppState.getProxy(containerId);
+            if (proxyServer != null) {
+                proxyServer.stop();
+            }
+            AppState.removeProxy(containerId);
+        }
+
+        try {
+            serviceClient.getBlobContainerClient(containerId).delete();
+        } catch (BlobStorageException e) {
+            if (e.getErrorCode() == BlobErrorCode.CONTAINER_NOT_FOUND) {
+                throw new IllegalStateException("Container not found: " + containerId, e);
+            }
+            throw new RuntimeException("Failed to delete container: " + containerId, e);
         }
     }
 
-    private String getAgentInfo(BlobContainerClient container) {
-        BlobClient blob = container.getBlobClient("info");
+    public void validateAgent(String containerId) {
+        BlockBlobClient blobClient = serviceClient
+                .getBlobContainerClient(containerId)
+                .getBlobClient(InfoBlobName)
+                .getBlockBlobClient();
+
         try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            blob.downloadStream(out);
-            return new String(CryptoUtil.xor(out.toByteArray(), INFO_KEY), UTF_8);
-        } catch (Exception e) {
-            log.warn("Failed to read agent info from container '{}': {}", container.getBlobContainerName(), e.getMessage());
-            return "<unknown@host>";
+            blobClient.getProperties();
+        } catch (BlobStorageException e) {
+            if (e.getErrorCode() == BlobErrorCode.CONTAINER_NOT_FOUND) {
+                throw new IllegalArgumentException("Agent container " + containerId + " does not exist");
+            }
+            throw new IllegalStateException("Invalid agent container " + containerId + ": " + e.getMessage(), e);
+        }
+    }
+
+    public String getSelectedAgentInfo(String selectedAgent) {
+        if (selectedAgent == null || selectedAgent.isEmpty()) {
+            throw new IllegalStateException("No agent selected. Use 'agent use <container-id>' first.");
+        }
+
+        BlobContainerClient containerClient = serviceClient.getBlobContainerClient(selectedAgent);
+        BlockBlobClient blobClient = containerClient.getBlobClient(InfoBlobName).getBlockBlobClient();
+
+        if (!blobClient.exists()) {
+            throw new IllegalStateException("Info blob not found for container: " + selectedAgent);
+        }
+
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            blobClient.download(outputStream);
+            byte[] encrypted = outputStream.toByteArray();
+            byte[] decrypted = CryptoUtil.xor(encrypted, InfoKey);
+            return new String(decrypted, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read agent info", e);
         }
     }
 }

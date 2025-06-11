@@ -1,32 +1,47 @@
 package com.proxyblob;
 
-import java.util.Scanner;
+import com.proxyblob.context.AppContext;
+
+import java.util.concurrent.atomic.AtomicReference;
+
+import static com.proxyblob.Agent.ErrNoConnectionString;
+import static com.proxyblob.Agent.Success;
 
 public class MainAgent {
 
+    // Аналог переменной var ConnString string
+    private static final AtomicReference<String> connStringRef = new AtomicReference<>("");
+
     public static void main(String[] args) {
-        String connString = parseArgs(args);
-
-        try {
-            Agent agent = new Agent(connString);
-            Runtime.getRuntime().addShutdownHook(new Thread(agent::stop));
-            agent.start();
-
-            new Scanner(System.in).nextLine(); // block main thread
-
-        } catch (Exception e) {
-            System.err.println("Agent startup failed: " + e.getMessage());
-            System.exit(3);
-        }
-    }
-
-    private static String parseArgs(String[] args) {
-        if (args.length >= 2 && (args[0].equals("-c") || args[0].equals("--conn"))) {
-            return args[1];
+        // Парсим аргументы, ищем -c <connString>
+        for (int i = 0; i < args.length - 1; i++) {
+            if ("-c".equals(args[i])) {
+                connStringRef.set(args[i + 1]);
+                break;
+            }
         }
 
-        System.err.println("Missing connection string. Use -c <base64-encoded-URL>");
-        System.exit(2);
-        return null; // unreachable, for compiler
+        String connString = connStringRef.get();
+        if (connString == null || connString.isEmpty()) {
+            System.exit(ErrNoConnectionString);
+        }
+
+        // Инициализируем контекст
+        AppContext context = new AppContext();
+
+        // Обработка сигналов SIGINT/SIGTERM (Ctrl+C)
+        Runtime.getRuntime().addShutdownHook(new Thread(context::stop));
+
+        // Создание агента
+        Agent temp = new Agent(null, null); // нужен только чтобы вызвать .create()
+        Agent.AgentCreationResult result = temp.create(context, connString);
+
+        if (result.status() != Success) {
+            System.exit(result.status());
+        }
+
+        // Запуск агента
+        int exitCode = result.agent().start(context);
+        System.exit(exitCode);
     }
 }

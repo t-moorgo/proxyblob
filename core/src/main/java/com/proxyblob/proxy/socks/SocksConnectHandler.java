@@ -1,26 +1,38 @@
 package com.proxyblob.proxy.socks;
 
-import com.proxyblob.protocol.ProtocolError;
 import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
-import com.proxyblob.protocol.model.ConnectionState;
+import com.proxyblob.protocol.ProtocolError;
 import lombok.RequiredArgsConstructor;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.ConnectException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NoRouteToHostException;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+
+import static com.proxyblob.protocol.Connection.StateConnected;
+import static com.proxyblob.protocol.ProtocolError.ErrAddressNotSupported;
+import static com.proxyblob.protocol.ProtocolError.ErrConnectionRefused;
+import static com.proxyblob.protocol.ProtocolError.ErrHostUnreachable;
+import static com.proxyblob.protocol.ProtocolError.ErrNetworkUnreachable;
+import static com.proxyblob.protocol.ProtocolError.ErrNone;
+import static com.proxyblob.protocol.ProtocolError.ErrPacketSendFailed;
+import static com.proxyblob.protocol.ProtocolError.ErrTTLExpired;
+import static com.proxyblob.proxy.socks.SocksConstants.GeneralFailure;
+import static com.proxyblob.proxy.socks.SocksConstants.IPv4;
+import static com.proxyblob.proxy.socks.SocksConstants.Succeeded;
+import static com.proxyblob.proxy.socks.SocksConstants.Version5;
 
 @RequiredArgsConstructor
 public class SocksConnectHandler {
@@ -28,133 +40,174 @@ public class SocksConnectHandler {
     private final BaseHandler baseHandler;
 
     public byte handle(Connection conn, byte[] cmdData) {
-        if (cmdData.length < 4) {
-            sendMalformedResponse(conn);
-            return ProtocolError.ADDRESS_NOT_SUPPORTED.getCode();
+        if (cmdData == null || cmdData.length < 4) {
+            byte[] response = new byte[]{
+                    Version5, GeneralFailure, 0x00, IPv4, 0, 0, 0, 0, 0, 0
+            };
+            baseHandler.sendData(conn.getId(), response);
+            return ErrAddressNotSupported;
         }
 
-        SocksAddressParser.Result parseResult = SocksAddressParser.parse(cmdData, 3);
-        if (parseResult.errorCode() != ProtocolError.NONE.getCode()) {
-            baseHandler.sendClose(conn.getId(), ProtocolError.fromByte(parseResult.errorCode()));
-            return parseResult.errorCode();
+        // Parse target
+        SocksAddressParser.Result result = SocksAddressParser.parseAddress(
+                Arrays.copyOfRange(cmdData, 3, cmdData.length)
+        );
+        if (result.errorCode() != ErrNone) {
+            SocksErrorUtil.sendError(baseHandler, conn, result.errorCode());
+            return result.errorCode();
         }
 
-        String target = parseResult.hostAndPort();
-
-        Socket targetConn = new Socket();
+        Socket targetSocket;
+        byte errCode;
         try {
-            targetConn.connect(new InetSocketAddress(
-                    target.split(":")[0],
-                    Integer.parseInt(target.split(":")[1])
-            ), 10_000);
+            String[] parts = result.hostAndPort().split(":");
+            String host = parts[0];
+            int port = Integer.parseInt(parts[1]);
+
+            SocketAddress sockaddr = new InetSocketAddress(host, port);
+            targetSocket = new Socket();
+            targetSocket.connect(sockaddr, 10_000); // 10 sec timeout
+
+        } catch (SocketTimeoutException e) {
+            errCode = ErrTTLExpired;
+            SocksErrorUtil.sendError(baseHandler, conn, errCode);
+            return errCode;
+        } catch (ConnectException e) {
+            errCode = ErrConnectionRefused;
+            SocksErrorUtil.sendError(baseHandler, conn, errCode);
+            return errCode;
+        } catch (UnknownHostException | NoRouteToHostException e) {
+            errCode = ErrHostUnreachable;
+            SocksErrorUtil.sendError(baseHandler, conn, errCode);
+            return errCode;
         } catch (IOException e) {
-            byte errCode = mapSocketError(e);
-            baseHandler.sendClose(conn.getId(), ProtocolError.fromByte(errCode));
+            errCode = ErrNetworkUnreachable;
+            SocksErrorUtil.sendError(baseHandler, conn, errCode);
             return errCode;
         }
 
-        byte[] response = createSuccessResponse(targetConn);
-        ProtocolError sendCode = baseHandler.sendData(conn.getId(), response);
-        if (sendCode != ProtocolError.NONE) {
+        // Send success response
+        InetSocketAddress local = (InetSocketAddress) targetSocket.getLocalSocketAddress();
+        byte[] ipBytes = local.getAddress().getAddress();
+        int port = local.getPort();
+
+        byte[] response = new byte[10];
+        response[0] = Version5;
+        response[1] = Succeeded;
+        response[2] = 0x00;
+        response[3] = IPv4;
+        System.arraycopy(ipBytes, 0, response, 4, 4);
+        ByteBuffer.wrap(response, 8, 2).putShort((short) port);
+
+        errCode = baseHandler.sendData(conn.getId(), response);
+        if (errCode != ErrNone) {
             try {
-                targetConn.close();
+                targetSocket.close();
             } catch (IOException ignored) {
             }
-            return ProtocolError.PACKET_SEND_FAILED.getCode();
+            return ErrPacketSendFailed;
         }
 
-        conn.setSocket(targetConn);
-        conn.setState(ConnectionState.CONNECTED);
+        conn.setSocket(targetSocket);
+        conn.setState(StateConnected);
 
-        return handleTCPDataTransfer(conn, targetConn);
+        return new SocksConnectHandler(baseHandler).handleTCPDataTransfer(conn, targetSocket);
     }
 
-    private byte[] createSuccessResponse(Socket socket) {
-        byte[] response = new byte[10];
-        response[0] = 0x05; // Version
-        response[1] = 0x00; // Success
-        response[2] = 0x00; // Reserved
-        response[3] = 0x01; // IPv4
+    private byte handleTCPDataTransfer(Connection conn, Socket tcpConn) {
+        BlockingQueue<byte[]> clientToTarget = new LinkedBlockingQueue<>();
+        BlockingQueue<byte[]> targetToClient = new LinkedBlockingQueue<>();
+        BlockingQueue<Byte> errorQueue = new ArrayBlockingQueue<>(2);
 
-        InetAddress localAddress = socket.getLocalAddress();
-        int localPort = socket.getLocalPort();
+        // From SOCKS client → target
+        baseHandler.getContext().getGeneralExecutor().submit(() -> {
+            try {
+                while (true) {
+                    if (conn.getClosed().get() || baseHandler.getContext().isStopped()) return;
 
-        byte[] ipBytes = localAddress.getAddress();
-        System.arraycopy(ipBytes, 0, response, 4, 4);
-        response[8] = (byte) (localPort >> 8);
-        response[9] = (byte) (localPort & 0xFF);
-
-        return response;
-    }
-
-    private void sendMalformedResponse(Connection conn) {
-        byte[] response = new byte[]{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0};
-        baseHandler.sendData(conn.getId(), response);
-    }
-
-    private byte handleTCPDataTransfer(Connection conn, Socket targetConn) {
-        ExecutorService executor = Executors.newFixedThreadPool(2);
-        AtomicBoolean closed = new AtomicBoolean(false);
-        CountDownLatch latch = new CountDownLatch(2);
-
-        executor.submit(() -> {
-            try (InputStream in = targetConn.getInputStream()) {
-                byte[] buf = new byte[128 * 1024];
-                int len;
-                while (!closed.get() && (len = in.read(buf)) != -1) {
-                    byte[] data = Arrays.copyOf(buf, len);
-                    ProtocolError err = baseHandler.sendData(conn.getId(), data);
-                    if (err != ProtocolError.NONE) break;
-                }
-            } catch (IOException ignored) {
-            } finally {
-                closeConnection(conn, targetConn, closed);
-                latch.countDown();
-            }
-        });
-
-        executor.submit(() -> {
-            try (OutputStream out = targetConn.getOutputStream()) {
-                while (!closed.get()) {
-                    byte[] data = conn.getReadBuffer().poll(500, TimeUnit.MILLISECONDS);
+                    byte[] data = conn.getReadBuffer().poll(100, TimeUnit.MILLISECONDS);
                     if (data != null) {
-                        out.write(data);
+                        clientToTarget.put(data);
                     }
                 }
-            } catch (Exception ignored) {
-            } finally {
-                closeConnection(conn, targetConn, closed);
-                latch.countDown();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         });
 
-        try {
-            latch.await();
-        } catch (InterruptedException ignored) {
-            Thread.currentThread().interrupt();
-        }
+        // From target → SOCKS client
+        baseHandler.getContext().getGeneralExecutor().submit(() -> {
+            try (InputStream in = tcpConn.getInputStream()) {
+                byte[] buffer = new byte[128 * 1024];
+                while (true) {
+                    int read = in.read(buffer);
+                    if (read == -1) {
+                        errorQueue.put(ProtocolError.ErrConnectionClosed);
+                        break;
+                    }
 
-        return ProtocolError.NONE.getCode();
-    }
-
-    private void closeConnection(Connection conn, Socket targetConn, AtomicBoolean closed) {
-        if (closed.compareAndSet(false, true)) {
-            conn.setState(ConnectionState.CLOSED);
-            try {
-                targetConn.close();
-            } catch (IOException ignored) {
+                    byte[] data = Arrays.copyOf(buffer, read);
+                    targetToClient.put(data);
+                }
+            } catch (SocketTimeoutException e) {
+                try {
+                    errorQueue.put(ErrTTLExpired);
+                } catch (InterruptedException ignored) {}
+            } catch (IOException | InterruptedException e) {
+                try {
+                    errorQueue.put(ErrHostUnreachable);
+                } catch (InterruptedException ignored) {}
             }
+        });
+
+        // Main loop
+        try {
+            while (true) {
+                if (conn.getClosed().get()) {
+                    tcpConn.close();
+                    return ErrNone;
+                }
+
+                if (baseHandler.getContext().isStopped()) {
+                    tcpConn.close();
+                    return ProtocolError.ErrHandlerStopped;
+                }
+
+                Byte err = errorQueue.poll(100, TimeUnit.MILLISECONDS);
+                if (err != null) {
+                    tcpConn.close();
+                    return err;
+                }
+
+                byte[] toTarget = clientToTarget.poll(10, TimeUnit.MILLISECONDS);
+                if (toTarget != null) {
+                    try {
+                        tcpConn.getOutputStream().write(toTarget);
+                    } catch (SocketTimeoutException e) {
+                        tcpConn.close();
+                        return ErrTTLExpired;
+                    } catch (IOException e) {
+                        tcpConn.close();
+                        return ErrHostUnreachable;
+                    }
+                }
+
+                byte[] toClient = targetToClient.poll(10, TimeUnit.MILLISECONDS);
+                if (toClient != null) {
+                    byte errCode = baseHandler.sendData(conn.getId(), toClient);
+                    if (errCode != ErrNone) {
+                        tcpConn.close();
+                        return ErrPacketSendFailed;
+                    }
+                }
+            }
+        } catch (InterruptedException | IOException e) {
+            Thread.currentThread().interrupt();
+            try {
+                tcpConn.close();
+            } catch (IOException ignored) {}
+            return ProtocolError.ErrHandlerStopped;
         }
     }
 
-    private byte mapSocketError(IOException e) {
-        if (e instanceof SocketTimeoutException) {
-            return ProtocolError.TTL_EXPIRED.getCode();
-        } else if (e instanceof UnknownHostException) {
-            return ProtocolError.HOST_UNREACHABLE.getCode();
-        } else if (e instanceof ConnectException) {
-            return ProtocolError.NETWORK_UNREACHABLE.getCode();
-        }
-        return ProtocolError.CONNECTION_REFUSED.getCode();
-    }
 }

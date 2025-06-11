@@ -12,9 +12,9 @@ public interface Transport {
     byte ErrTransportTimeout = 21;
     byte ErrTransportError = 22;
 
-    byte send(AtomicBoolean cancelFlag, byte[] data);
+    byte send(byte[] data);
 
-    ReceiveResult receive(AtomicBoolean cancelFlag);
+    ReceiveResult receive();
 
     boolean isClosed(byte errorCode);
 

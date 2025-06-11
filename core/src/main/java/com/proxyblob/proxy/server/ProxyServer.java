@@ -1,5 +1,6 @@
 package com.proxyblob.proxy.server;
 
+import com.proxyblob.context.AppContext;
 import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
 import com.proxyblob.protocol.CryptoUtil;
@@ -22,10 +23,7 @@ import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.proxyblob.protocol.Connection.StateConnected;
 import static com.proxyblob.protocol.Connection.StateNew;
@@ -34,12 +32,13 @@ public class ProxyServer implements PacketHandler {
 
     private final BaseHandler baseHandler;
     private ServerSocket listener;
-    private final ExecutorService executor = Executors.newCachedThreadPool();
-    private final AtomicBoolean stopped = new AtomicBoolean(false);
+    private final AppContext context;
+
 
     // Конструктор
-    public ProxyServer(Transport transport) {
-        this.baseHandler = new BaseHandler(transport, this);
+    public ProxyServer(Transport transport, AppContext context) {
+        this.context = context;
+        this.baseHandler = new BaseHandler(transport, this, context);
     }
 
     @Override
@@ -56,8 +55,8 @@ public class ProxyServer implements PacketHandler {
             return;
         }
 
-        new Thread(this::receiveLoop).start();
-        new Thread(this::acceptLoop).start();
+        context.getGeneralExecutor().submit(this::receiveLoop);
+        context.getGeneralExecutor().submit(this::acceptLoop);
     }
 
     @Override
@@ -142,7 +141,7 @@ public class ProxyServer implements PacketHandler {
 
         // Writing to client is handled by forwardToClient thread
         try {
-            if (baseHandler.getStopped().get()) {
+            if (context.isStopped()) {
                 return ProtocolError.ErrConnectionClosed;
             }
             conn.getReadBuffer().put(result.data()); // blocking
@@ -167,18 +166,18 @@ public class ProxyServer implements PacketHandler {
     }
 
     public void acceptLoop() {
-        while (!stopped.get()) {
+        while (!context.isStopped()) {
             try {
                 Socket clientSocket = listener.accept(); // блокирует
 
-                if (stopped.get()) {
+                if (context.isStopped()) {
                     clientSocket.close();
                     return; // приложение остановлено
                 }
 
-                executor.submit(() -> handleConnection(clientSocket)); // аналог `go`
+                context.getGeneralExecutor().submit(() -> handleConnection(clientSocket)); // аналог `go`
             } catch (IOException e) {
-                if (stopped.get()) {
+                if (context.isStopped()) {
                     return; // тихо выходим при остановке
                 }
 
@@ -231,21 +230,27 @@ public class ProxyServer implements PacketHandler {
 
             BlockingQueue<Byte> errQueue = new ArrayBlockingQueue<>(2);
 
-            executor.submit(() -> forwardToAgent(clientSocket, proxyConn, errQueue));
-            executor.submit(() -> forwardToClient(clientSocket, proxyConn, errQueue));
+            context.getGeneralExecutor().submit(() -> forwardToAgent(clientSocket, proxyConn, errQueue));
+            context.getGeneralExecutor().submit(() -> forwardToClient(clientSocket, proxyConn, errQueue));
 
             while (true) {
-                if (stopped.get()) break;
+                if (context.isStopped()) break;
                 if (proxyConn.getClosed().get()) break;
 
-                Byte result = errQueue.poll(100, TimeUnit.MILLISECONDS);
-                if (result != null) {
-                    if (result != ProtocolError.ErrNone && result != ProtocolError.ErrConnectionClosed) {
-                        //TODO НУЖНО ЧТО ТО ПРОПИСАТЬ
+                try {
+                    Byte result = errQueue.poll(100, TimeUnit.MILLISECONDS);
+                    if (result != null) {
+                        if (result != ProtocolError.ErrNone && result != ProtocolError.ErrConnectionClosed) {
+                            // TODO логгирование ошибки или другое действие
+                        }
+                        break;
                     }
-                    break;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break; // выход по прерыванию
                 }
             }
+
 
             baseHandler.sendClose(connId, ProtocolError.ErrConnectionClosed);
             proxyConn.close();
@@ -263,7 +268,7 @@ public class ProxyServer implements PacketHandler {
         byte[] buffer = new byte[64 * 1024];
 
         while (true) {
-            if (proxyConn.getClosed().get() || stopped.get()) {
+            if (proxyConn.getClosed().get() || context.isStopped()) {
                 return;
             }
 
@@ -298,7 +303,7 @@ public class ProxyServer implements PacketHandler {
             OutputStream outputStream = clientSocket.getOutputStream();
 
             while (true) {
-                if (proxyConn.getClosed().get() || stopped.get()) return;
+                if (proxyConn.getClosed().get() || context.isStopped()) return;
 
                 byte[] data;
                 try {

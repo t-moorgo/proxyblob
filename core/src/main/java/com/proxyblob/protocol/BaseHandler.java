@@ -1,5 +1,6 @@
 package com.proxyblob.protocol;
 
+import com.proxyblob.context.AppContext;
 import com.proxyblob.proxy.PacketHandler;
 import com.proxyblob.transport.Transport;
 import lombok.Getter;
@@ -35,32 +36,32 @@ public class BaseHandler {
     private final ConcurrentMap<UUID, Connection> connections = new ConcurrentHashMap<>();
 
     // Cancellation support
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final AtomicBoolean stopped = new AtomicBoolean(false);
+    private final AppContext context;
 
     // Delegated packet handler
     private PacketHandler packetHandler;
 
-    public BaseHandler(Transport transport, PacketHandler packetHandler) {
+    public BaseHandler(Transport transport, PacketHandler packetHandler, AppContext context) {
         this.transport = transport;
         this.packetHandler = packetHandler;
+        this.context = context;
     }
 
+
     public void start() {
-        executor.submit(this::receiveLoop); // Запускаем в отдельном потоке
+        context.getReceiverExecutor().submit(this::receiveLoop);
     }
 
     public void stop() {
-        stopped.set(true);
-        executor.shutdownNow();
+        context.stop();
     }
 
     public void receiveLoop() {
         int consecutiveErrors = 0;
         final int maxConsecutiveErrors = 5;
 
-        while (!stopped.get()) {
-            Transport.ReceiveResult result = transport.receive(stopped);
+        while (!context.isStopped()) {
+            Transport.ReceiveResult result = transport.receive();
             byte[] data = result.data();
             byte errCode = result.errorCode();
 
@@ -70,7 +71,7 @@ public class BaseHandler {
                     return;
                 }
 
-                if (!stopped.get() && errCode != ProtocolError.ErrTransportError) {
+                if (!context.isStopped() && errCode != ProtocolError.ErrTransportError) {
                     consecutiveErrors++;
                     if (consecutiveErrors == maxConsecutiveErrors) {
                         return; // слишком много ошибок подряд
@@ -98,7 +99,7 @@ public class BaseHandler {
 
             byte resultCode = handlePacket(packet);
             if (resultCode != ErrNone) {
-                if (!stopped.get() && resultCode == ProtocolError.ErrConnectionClosed) {
+                if (!context.isStopped() && resultCode == ProtocolError.ErrConnectionClosed) {
                     continue;
                 }
                 sendClose(packet.getConnectionId(), resultCode);
@@ -209,7 +210,7 @@ public class BaseHandler {
     }
 
     private byte sendPacket(byte cmd, UUID connectionId, byte[] data) {
-        if (stopped.get()) {
+        if (context.isStopped()) {
             return ErrHandlerStopped;
         }
 
@@ -223,7 +224,7 @@ public class BaseHandler {
             return ErrInvalidPacket;
         }
 
-        byte errCode = transport.send(stopped, encoded);
+        byte errCode = transport.send(encoded);
         if (errCode != ErrNone) {
             if (transport.isClosed(errCode)) {
                 return ErrTransportClosed;

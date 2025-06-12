@@ -5,6 +5,8 @@ import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
 import com.proxyblob.protocol.CryptoUtil;
 import com.proxyblob.protocol.ProtocolError;
+import com.proxyblob.protocol.dto.CryptoResult;
+import com.proxyblob.protocol.dto.CryptoStatus;
 import com.proxyblob.proxy.PacketHandler;
 import com.proxyblob.transport.Transport;
 import lombok.Getter;
@@ -135,8 +137,8 @@ public class ProxyServer implements PacketHandler {
 
         conn.setLastActivity(Instant.now());
 
-        CryptoUtil.CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), data);
-        if (result.status() != CryptoUtil.CryptoStatus.OK) {
+        CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), data);
+        if (result.getStatus() != CryptoStatus.OK) {
             return ProtocolError.ErrInvalidCrypto;
         }
 
@@ -145,7 +147,7 @@ public class ProxyServer implements PacketHandler {
             if (context.isStopped()) {
                 return ProtocolError.ErrConnectionClosed;
             }
-            conn.getReadBuffer().put(result.data()); // blocking
+            conn.getReadBuffer().put(result.getData()); // blocking
             return ProtocolError.ErrNone;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

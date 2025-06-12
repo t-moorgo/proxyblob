@@ -4,6 +4,8 @@ import com.proxyblob.context.AppContext;
 import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
 import com.proxyblob.protocol.CryptoUtil;
+import com.proxyblob.protocol.dto.CryptoResult;
+import com.proxyblob.protocol.dto.CryptoStatus;
 import com.proxyblob.proxy.PacketHandler;
 import com.proxyblob.transport.Transport;
 
@@ -95,8 +97,8 @@ public class SocksHandler implements PacketHandler {
             return ErrConnectionNotFound;
         }
 
-        CryptoUtil.CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), data);
-        if (result.status() != CryptoUtil.CryptoStatus.OK) {
+        CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), data);
+        if (result.getStatus() != CryptoStatus.OK) {
             baseHandler.sendClose(connectionId, ErrInvalidCrypto);
             return ErrInvalidCrypto;
         }
@@ -106,7 +108,7 @@ public class SocksHandler implements PacketHandler {
         }
 
         try {
-            conn.getReadBuffer().put(result.data());
+            conn.getReadBuffer().put(result.getData());
             return ErrNone;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

@@ -8,6 +8,8 @@ import com.azure.storage.blob.models.BlobStorageException;
 import com.azure.storage.blob.options.BlockBlobSimpleUploadOptions;
 import com.azure.storage.blob.specialized.BlockBlobClient;
 import com.proxyblob.context.AppContext;
+import com.proxyblob.dto.AgentCreationResult;
+import com.proxyblob.dto.ParseResult;
 import com.proxyblob.protocol.CryptoUtil;
 import com.proxyblob.proxy.socks.SocksHandler;
 import com.proxyblob.transport.BlobTransport;
@@ -44,15 +46,15 @@ public class Agent {
 
     public AgentCreationResult create(AppContext context, String connString) {
         ParseResult parsed = parseConnectionString(connString);
-        if (parsed.errorCode() != Success) {
-            return new AgentCreationResult(null, parsed.errorCode());
+        if (parsed.getErrorCode() != Success) {
+            return new AgentCreationResult(null, parsed.getErrorCode());
         }
 
         try {
             BlobContainerClient containerClient = new BlobContainerClientBuilder()
-                    .endpoint(parsed.storageUrl())
-                    .sasToken(parsed.sasToken())
-                    .containerName(parsed.containerId())
+                    .endpoint(parsed.getStorageUrl())
+                    .sasToken(parsed.getSasToken())
+                    .containerName(parsed.getContainerId())
                     .buildClient();
 
             BlockBlobClient requestBlob = containerClient.getBlobClient(RequestBlobName).getBlockBlobClient();
@@ -66,9 +68,6 @@ public class Agent {
         } catch (Exception e) {
             return new AgentCreationResult(null, ErrConnectionStringError);
         }
-    }
-
-    public record AgentCreationResult(Agent agent, int status) {
     }
 
     public int start(AppContext context) {
@@ -204,9 +203,6 @@ public class Agent {
         }
 
         return username + "@" + hostname;
-    }
-
-    private record ParseResult(String storageUrl, String containerId, String sasToken, int errorCode) {
     }
 }
 

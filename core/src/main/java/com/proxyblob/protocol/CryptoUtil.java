@@ -1,5 +1,8 @@
 package com.proxyblob.protocol;
 
+import com.proxyblob.protocol.dto.CryptoResult;
+import com.proxyblob.protocol.dto.CryptoStatus;
+import com.proxyblob.protocol.dto.KeyPair;
 import lombok.experimental.UtilityClass;
 import org.bouncycastle.crypto.InvalidCipherTextException;
 import org.bouncycastle.crypto.digests.SHA3Digest;
@@ -21,21 +24,6 @@ public class CryptoUtil {
 
     public static final int NONCE_SIZE = 24;
     public static final int KEY_SIZE = 32;
-
-    public enum CryptoStatus {
-        OK,
-        INVALID_CRYPTO
-    }
-
-    public record CryptoResult(byte[] data, CryptoStatus status) {
-        public static CryptoResult error() {
-            return new CryptoResult(null, CryptoStatus.INVALID_CRYPTO);
-        }
-
-        public static CryptoResult ok(byte[] data) {
-            return new CryptoResult(data, CryptoStatus.OK);
-        }
-    }
 
     public static KeyPair generateKeyPair() {
         byte[] privateBytes = new byte[KEY_SIZE];
@@ -87,15 +75,15 @@ public class CryptoUtil {
             System.arraycopy(nonce, 0, result, 0, nonce.length);
             System.arraycopy(output, 0, result, nonce.length, output.length);
 
-            return CryptoResult.ok(result);
+            return ok(result);
         } catch (Exception e) {
-            return CryptoResult.error();
+            return error();
         }
     }
 
     public static CryptoResult decrypt(byte[] key, byte[] ciphertext) {
         if (ciphertext.length < NONCE_SIZE) {
-            return CryptoResult.error();
+            return error();
         }
 
         try {
@@ -112,9 +100,9 @@ public class CryptoUtil {
             int len = cipher.processBytes(encrypted, 0, encrypted.length, output, 0);
             cipher.doFinal(output, len);
 
-            return CryptoResult.ok(output);
+            return ok(output);
         } catch (InvalidCipherTextException e) {
-            return CryptoResult.error();
+            return error();
         }
     }
 
@@ -126,6 +114,11 @@ public class CryptoUtil {
         return result;
     }
 
-    public record KeyPair(X25519PrivateKeyParameters privateKey, X25519PublicKeyParameters publicKey) {
+    private static CryptoResult error() {
+        return new CryptoResult(null, CryptoStatus.INVALID_CRYPTO);
+    }
+
+    private static CryptoResult ok(byte[] data) {
+        return new CryptoResult(data, CryptoStatus.OK);
     }
 }

@@ -1,6 +1,7 @@
 package com.proxyblob;
 
 import com.proxyblob.context.AppContext;
+import com.proxyblob.dto.AgentCreationResult;
 
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -34,14 +35,14 @@ public class MainAgent {
 
         // Создание агента
         Agent temp = new Agent(null, null); // нужен только чтобы вызвать .create()
-        Agent.AgentCreationResult result = temp.create(context, connString);
+        AgentCreationResult result = temp.create(context, connString);
 
-        if (result.status() != Success) {
-            System.exit(result.status());
+        if (result.getStatus() != Success) {
+            System.exit(result.getStatus());
         }
 
         // Запуск агента
-        int exitCode = result.agent().start(context);
+        int exitCode = result.getAgent().start(context);
         System.exit(exitCode);
     }
 }

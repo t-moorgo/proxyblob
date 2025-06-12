@@ -1,5 +1,6 @@
 package com.proxyblob.proxy.socks;
 
+import com.proxyblob.proxy.socks.dto.ParsedAddress;
 import lombok.experimental.UtilityClass;
 
 import java.net.InetAddress;
@@ -17,41 +18,41 @@ import static com.proxyblob.proxy.socks.SocksConstants.IPv6;
 @UtilityClass
 public class SocksAddressParser {
 
-    public static Result parseAddress(byte[] data) {
+    public static ParsedAddress parseAddress(byte[] data) {
         if (data == null || data.length < 2) {
-            return new Result(null, 0, ErrInvalidPacket);
+            return new ParsedAddress(null, 0, ErrInvalidPacket);
         }
 
         byte addrType = data[0];
         byte[] addressData = Arrays.copyOfRange(data, 1, data.length);
 
-        Result parsed = parseNetworkAddress(addrType, addressData);
-        if (parsed.errorCode() != ErrNone) {
+        ParsedAddress parsed = parseNetworkAddress(addrType, addressData);
+        if (parsed.getErrorCode() != ErrNone) {
             return parsed;
         }
 
-        return new Result(parsed.hostAndPort(), parsed.consumedBytes() + 1, ErrNone);
+        return new ParsedAddress(parsed.getHostAndPort(), parsed.getConsumedBytes() + 1, ErrNone);
     }
 
-    public static Result extractUDPHeader(byte[] data) {
+    public static ParsedAddress extractUDPHeader(byte[] data) {
         int headerLen = 4; // RSV(2) + FRAG(1) + ATYP(1)
 
         if (data == null || data.length < 5) {
-            return new Result(null, 0, ErrInvalidPacket);
+            return new ParsedAddress(null, 0, ErrInvalidPacket);
         }
 
         byte addrType = data[3];
         byte[] addressData = Arrays.copyOfRange(data, 4, data.length);
 
-        Result parsed = parseNetworkAddress(addrType, addressData);
-        if (parsed.errorCode() != ErrNone) {
-            return new Result(null, 0, parsed.errorCode());
+        ParsedAddress parsed = parseNetworkAddress(addrType, addressData);
+        if (parsed.getErrorCode() != ErrNone) {
+            return new ParsedAddress(null, 0, parsed.getErrorCode());
         }
 
-        return new Result(parsed.hostAndPort(), headerLen + parsed.consumedBytes(), ErrNone);
+        return new ParsedAddress(parsed.getHostAndPort(), headerLen + parsed.getConsumedBytes(), ErrNone);
     }
 
-    private static Result parseNetworkAddress(byte addrType, byte[] data) {
+    private static ParsedAddress parseNetworkAddress(byte addrType, byte[] data) {
         int cursor = 0;
         String addr;
 
@@ -96,17 +97,14 @@ public class SocksAddressParser {
             int port = ByteBuffer.wrap(data, cursor, 2).getShort() & 0xFFFF;
             cursor += 2;
 
-            return new Result(addr + ":" + port, cursor, ErrNone);
+            return new ParsedAddress(addr + ":" + port, cursor, ErrNone);
 
         } catch (UnknownHostException e) {
             return error();
         }
     }
 
-    private static Result error() {
-        return new Result(null, 0, ErrAddressNotSupported);
-    }
-
-    public record Result(String hostAndPort, int consumedBytes, byte errorCode) {
+    private static ParsedAddress error() {
+        return new ParsedAddress(null, 0, ErrAddressNotSupported);
     }
 }

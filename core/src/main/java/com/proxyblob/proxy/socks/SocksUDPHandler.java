@@ -2,6 +2,9 @@ package com.proxyblob.proxy.socks;
 
 import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
+import com.proxyblob.proxy.socks.dto.ParsedAddress;
+import com.proxyblob.proxy.socks.dto.ResponsePacket;
+import com.proxyblob.proxy.socks.dto.TargetInfo;
 import lombok.RequiredArgsConstructor;
 
 import java.io.ByteArrayOutputStream;
@@ -33,7 +36,6 @@ public class SocksUDPHandler {
     private final BaseHandler baseHandler;
 
     public byte handle(Connection conn) {
-        // 1. Create UDP socket (bound to any address, any port)
         DatagramSocket udpSocket;
         try {
             udpSocket = new DatagramSocket(new InetSocketAddress("0.0.0.0", 0));
@@ -43,18 +45,16 @@ public class SocksUDPHandler {
             return errCode;
         }
 
-        // 2. Get assigned port
         int port = udpSocket.getLocalPort();
 
-        // 3. Build response: |VER|REP|RSV|ATYP|BND.ADDR|BND.PORT|
         ByteArrayOutputStream response = new ByteArrayOutputStream();
-        response.write(Version5);         // VER (SOCKS5)
-        response.write(Succeeded);         // REP (Succeeded)
-        response.write(0);         // RSV
-        response.write(IPv4);         // ATYP (IPv4)
-        response.writeBytes(new byte[]{0, 0, 0, 0}); // BND.ADDR: 0.0.0.0
-        response.write((port >> 8) & 0xFF); // BND.PORT high byte
-        response.write(port & 0xFF);        // BND.PORT low byte
+        response.write(Version5);
+        response.write(Succeeded);
+        response.write(0);
+        response.write(IPv4);
+        response.writeBytes(new byte[]{0, 0, 0, 0});
+        response.write((port >> 8) & 0xFF);
+        response.write(port & 0xFF);
 
         byte errCode = baseHandler.sendData(conn.getId(), response.toByteArray());
         if (errCode != ErrNone) {
@@ -62,19 +62,16 @@ public class SocksUDPHandler {
             return ErrPacketSendFailed;
         }
 
-        // 4. Store UDP connection and update state
         conn.setDatagramSocket(udpSocket);
         conn.setState(StateConnected);
 
-        // 5. Start relaying packets
         baseHandler.getContext().getGeneralExecutor().submit(() ->
                 new SocksUDPHandler(baseHandler).handleUDPPackets(conn)
         );
 
-        // 6. Keep control TCP connection alive
         while (!baseHandler.getContext().isStopped() && !conn.getClosed().get()) {
             try {
-                Thread.sleep(500); // Periodically check
+                Thread.sleep(500);
             } catch (InterruptedException ignored) {
                 break;
             }
@@ -97,7 +94,6 @@ public class SocksUDPHandler {
             return;
         }
 
-        // Ensure proper cleanup
         baseHandler.getContext().getGeneralExecutor().submit(() -> {
             try {
                 while (!baseHandler.getContext().isStopped() && !conn.getClosed().get()) {
@@ -109,12 +105,8 @@ public class SocksUDPHandler {
             }
         });
 
-        // Track targets
-        record TargetInfo(InetSocketAddress addr, Instant lastActive) {}
         ConcurrentHashMap<String, TargetInfo> targets = new ConcurrentHashMap<>();
 
-        // Channel (buffered queue) for incoming responses
-        record ResponsePacket(byte[] data, InetSocketAddress addr) {}
         BlockingQueue<ResponsePacket> responses = new LinkedBlockingQueue<>(100);
 
         baseHandler.getContext().getGeneralExecutor().submit(() -> {
@@ -122,20 +114,18 @@ public class SocksUDPHandler {
 
             while (!baseHandler.getContext().isStopped() && !conn.getClosed().get()) {
                 try {
-                    targetConn.setSoTimeout(300); // 300ms timeout
+                    targetConn.setSoTimeout(300);
 
                     DatagramPacket packet = new DatagramPacket(respBuf, respBuf.length);
                     try {
                         targetConn.receive(packet);
                     } catch (SocketTimeoutException e) {
-                        continue; // Expected due to timeout
+                        continue;
                     }
 
-                    // Make a copy since respBuf is reused
                     byte[] data = Arrays.copyOf(packet.getData(), packet.getLength());
                     InetSocketAddress addr = new InetSocketAddress(packet.getAddress(), packet.getPort());
 
-                    // Try to put into queue (non-blocking)
                     responses.offer(new ResponsePacket(data, addr));
 
                 } catch (IOException e) {
@@ -148,22 +138,20 @@ public class SocksUDPHandler {
             Instant lastCleanup = Instant.now();
 
             while (!baseHandler.getContext().isStopped() && !conn.getClosed().get()) {
-                // Приоритет: responses
                 ResponsePacket resp = responses.poll();
                 if (Instant.now().isAfter(lastCleanup.plusSeconds(30))) {
                     Instant now = Instant.now();
-                    targets.entrySet().removeIf(entry -> Duration.between(entry.getValue().lastActive(), now).toMinutes() > 1);
+                    targets.entrySet().removeIf(entry -> Duration.between(entry.getValue().getLastActive(), now).toMinutes() > 1);
                     lastCleanup = now;
                 }
 
                 if (resp != null) {
                     boolean found = false;
                     for (TargetInfo target : targets.values()) {
-                        if (target.addr().getAddress().equals(resp.addr().getAddress())
-                                && target.addr().getPort() == resp.addr().getPort()) {
-                            // Обновить время активности
-                            String targetKey = resp.addr().getAddress().getHostAddress() + ":" + resp.addr().getPort();
-                            targets.put(targetKey, new TargetInfo(resp.addr(), Instant.now()));
+                        if (target.getAddr().getAddress().equals(resp.getAddr().getAddress())
+                                && target.getAddr().getPort() == resp.getAddr().getPort()) {
+                            String targetKey = resp.getAddr().getAddress().getHostAddress() + ":" + resp.getAddr().getPort();
+                            targets.put(targetKey, new TargetInfo(resp.getAddr(), Instant.now()));
                             found = true;
                             break;
                         }
@@ -173,23 +161,22 @@ public class SocksUDPHandler {
                         continue;
                     }
 
-                    // Сборка SOCKS-ответа
                     byte addrType;
-                    byte[] addrBytes = resp.addr().getAddress().getAddress();
+                    byte[] addrBytes = resp.getAddr().getAddress().getAddress();
                     if (addrBytes.length == 4) {
-                        addrType = (byte) 0x01; // IPv4
+                        addrType = (byte) 0x01;
                     } else {
-                        addrType = (byte) 0x04; // IPv6
+                        addrType = (byte) 0x04;
                     }
 
                     ByteArrayOutputStream header = new ByteArrayOutputStream();
                     header.write(new byte[]{0, 0, 0, addrType});
                     header.write(addrBytes);
-                    header.write(ByteBuffer.allocate(2).putShort((short) resp.addr().getPort()).array());
+                    header.write(ByteBuffer.allocate(2).putShort((short) resp.getAddr().getPort()).array());
 
-                    byte[] fullPacket = ByteBuffer.allocate(header.size() + resp.data().length)
+                    byte[] fullPacket = ByteBuffer.allocate(header.size() + resp.getData().length)
                             .put(header.toByteArray())
-                            .put(resp.data())
+                            .put(resp.getData())
                             .array();
 
                     DatagramPacket outPacket = new DatagramPacket(fullPacket, fullPacket.length, clientAddr);
@@ -201,7 +188,6 @@ public class SocksUDPHandler {
                     continue;
                 }
 
-                // Чтение из клиента
                 try {
                     udpConn.setSoTimeout(300);
                     DatagramPacket inPacket = new DatagramPacket(buffer, buffer.length);
@@ -209,12 +195,10 @@ public class SocksUDPHandler {
 
                     InetSocketAddress remoteAddr = new InetSocketAddress(inPacket.getAddress(), inPacket.getPort());
 
-                    // Установить clientAddr, если ещё не установлен
                     if (clientAddr == null) {
                         clientAddr = remoteAddr;
                     }
 
-                    // Только от клиента
                     if (!remoteAddr.getAddress().equals(clientAddr.getAddress())) {
                         continue;
                     }
@@ -222,11 +206,11 @@ public class SocksUDPHandler {
                     byte[] received = Arrays.copyOf(inPacket.getData(), inPacket.getLength());
                     if (received.length <= 3) continue;
 
-                    SocksAddressParser.Result parsed = SocksAddressParser.extractUDPHeader(received);
-                    if (parsed.errorCode() != ErrNone) continue;
+                    ParsedAddress parsed = SocksAddressParser.extractUDPHeader(received);
+                    if (parsed.getErrorCode() != ErrNone) continue;
 
-                    String targetAddr = parsed.hostAndPort();
-                    int headerLen = parsed.consumedBytes();
+                    String targetAddr = parsed.getHostAndPort();
+                    int headerLen = parsed.getConsumedBytes();
 
                     String[] parts = targetAddr.split(":");
                     if (parts.length != 2) continue;
@@ -244,7 +228,7 @@ public class SocksUDPHandler {
                     DatagramPacket targetPacket = new DatagramPacket(payload, payload.length, targetUDPAddr);
                     targetConn.send(targetPacket);
                 } catch (SocketTimeoutException ignore) {
-                    // expected timeout
+                    //TODO что то сделать
                 } catch (IOException e) {
                     baseHandler.sendClose(conn.getId(), ErrNetworkUnreachable);
                     return;

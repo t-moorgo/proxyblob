@@ -3,6 +3,7 @@ package com.proxyblob.proxy.socks;
 import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
 import com.proxyblob.protocol.ProtocolError;
+import com.proxyblob.proxy.socks.dto.ParsedAddress;
 import lombok.RequiredArgsConstructor;
 
 import java.io.IOException;
@@ -49,18 +50,18 @@ public class SocksConnectHandler {
         }
 
         // Parse target
-        SocksAddressParser.Result result = SocksAddressParser.parseAddress(
+        ParsedAddress parsedAddress = SocksAddressParser.parseAddress(
                 Arrays.copyOfRange(cmdData, 3, cmdData.length)
         );
-        if (result.errorCode() != ErrNone) {
-            SocksErrorUtil.sendError(baseHandler, conn, result.errorCode());
-            return result.errorCode();
+        if (parsedAddress.getErrorCode() != ErrNone) {
+            SocksErrorUtil.sendError(baseHandler, conn, parsedAddress.getErrorCode());
+            return parsedAddress.getErrorCode();
         }
 
         Socket targetSocket;
         byte errCode;
         try {
-            String[] parts = result.hostAndPort().split(":");
+            String[] parts = parsedAddress.getHostAndPort().split(":");
             String host = parts[0];
             int port = Integer.parseInt(parts[1]);
 

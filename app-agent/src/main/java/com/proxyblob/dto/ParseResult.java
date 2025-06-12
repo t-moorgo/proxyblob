@@ -5,7 +5,9 @@ import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class ContainerCreationResult {
+public class ParseResult {
+    private String storageUrl;
     private String containerId;
-    private String connectionString;
+    private String sasToken;
+    private int errorCode;
 }

@@ -1,5 +1,7 @@
 package com.proxyblob.transport;
 
+import com.proxyblob.proxy.socks.dto.ReceiveResult;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public interface Transport {
@@ -17,6 +19,4 @@ public interface Transport {
     ReceiveResult receive();
 
     boolean isClosed(byte errorCode);
-
-    record ReceiveResult(byte[] data, byte errorCode) {}
 }

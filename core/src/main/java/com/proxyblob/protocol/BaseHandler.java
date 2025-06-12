@@ -1,7 +1,11 @@
 package com.proxyblob.protocol;
 
 import com.proxyblob.context.AppContext;
+import com.proxyblob.protocol.dto.CryptoResult;
+import com.proxyblob.protocol.dto.CryptoStatus;
+import com.proxyblob.protocol.dto.KeyPair;
 import com.proxyblob.proxy.PacketHandler;
+import com.proxyblob.proxy.socks.dto.ReceiveResult;
 import com.proxyblob.transport.Transport;
 import lombok.Getter;
 import lombok.Setter;
@@ -61,9 +65,9 @@ public class BaseHandler {
         final int maxConsecutiveErrors = 5;
 
         while (!context.isStopped()) {
-            Transport.ReceiveResult result = transport.receive();
-            byte[] data = result.data();
-            byte errCode = result.errorCode();
+            ReceiveResult result = transport.receive();
+            byte[] data = result.getData();
+            byte errCode = result.getErrorCode();
 
             if (errCode != ErrNone) {
                 if (transport.isClosed(errCode)) {
@@ -121,9 +125,9 @@ public class BaseHandler {
     }
 
     public byte sendNewConnection(UUID connectionId) {
-        CryptoUtil.KeyPair keyPair = CryptoUtil.generateKeyPair();
-        X25519PrivateKeyParameters privateKey = keyPair.privateKey();
-        X25519PublicKeyParameters publicKey = keyPair.publicKey();
+        KeyPair keyPair = CryptoUtil.generateKeyPair();
+        X25519PrivateKeyParameters privateKey = keyPair.getPrivateKey();
+        X25519PublicKeyParameters publicKey = keyPair.getPublicKey();
 
         byte[] privateKeyBytes = privateKey.getEncoded(); // 32 bytes
         byte[] publicKeyBytes = publicKey.getEncoded();   // 32 bytes
@@ -155,9 +159,9 @@ public class BaseHandler {
         }
 
         // Генерация новой пары ключей
-        CryptoUtil.KeyPair keyPair = CryptoUtil.generateKeyPair();
-        X25519PrivateKeyParameters privateKey = keyPair.privateKey();
-        byte[] publicKeyBytes = keyPair.publicKey().getEncoded();
+        KeyPair keyPair = CryptoUtil.generateKeyPair();
+        X25519PrivateKeyParameters privateKey = keyPair.getPrivateKey();
+        byte[] publicKeyBytes = keyPair.getPublicKey().getEncoded();
 
         // Получение nonce и публичного ключа сервера из сохранённого SecretKey
         byte[] serverData = conn.getSecretKey();
@@ -190,12 +194,12 @@ public class BaseHandler {
             return ErrConnectionNotFound;
         }
 
-        CryptoUtil.CryptoResult result = CryptoUtil.encrypt(conn.getSecretKey(), data);
-        if (result.status() != CryptoUtil.CryptoStatus.OK) {
+        CryptoResult result = CryptoUtil.encrypt(conn.getSecretKey(), data);
+        if (result.getStatus() != CryptoStatus.OK) {
             return ErrInvalidCrypto;
         }
 
-        return sendPacket(CmdData, connectionId, result.data());
+        return sendPacket(CmdData, connectionId, result.getData());
     }
 
 

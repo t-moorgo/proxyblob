@@ -9,12 +9,12 @@ import java.io.IOException;
 import java.nio.file.Paths;
 
 @Getter
-@NoArgsConstructor // <-- ОБЯЗАТЕЛЬНО для Jackson
+@NoArgsConstructor
 public class Config {
 
     private String storageAccountName;
     private String storageAccountKey;
-    private String storageURL; // optional
+    private String storageURL;
 
     public void validate() {
         if (storageAccountName == null || storageAccountName.isEmpty()) {

@@ -14,7 +14,7 @@ public class AgentIdCandidates implements Iterable<String> {
         try {
             List<ContainerInfo> containers = AppState.getStorageManager().listAgentContainers();
             return containers.stream()
-                    .map(ContainerInfo::getId) // вытаскиваем ID
+                    .map(ContainerInfo::getId)
                     .iterator();
         } catch (Exception e) {
             return Collections.emptyIterator();

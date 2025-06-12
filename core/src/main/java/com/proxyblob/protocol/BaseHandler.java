@@ -2,7 +2,6 @@ package com.proxyblob.protocol;
 
 import com.proxyblob.context.AppContext;
 import com.proxyblob.protocol.dto.CryptoResult;
-import com.proxyblob.protocol.dto.CryptoStatus;
 import com.proxyblob.protocol.dto.KeyPair;
 import com.proxyblob.proxy.PacketHandler;
 import com.proxyblob.proxy.socks.dto.ReceiveResult;
@@ -14,43 +13,39 @@ import org.bouncycastle.crypto.params.X25519PublicKeyParameters;
 
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
+import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionClosed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionNotFound;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrHandlerStopped;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidCommand;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidCrypto;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidPacket;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrPacketSendFailed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrTransportClosed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrTransportError;
 import static com.proxyblob.protocol.Packet.CmdAck;
 import static com.proxyblob.protocol.Packet.CmdClose;
 import static com.proxyblob.protocol.Packet.CmdData;
 import static com.proxyblob.protocol.Packet.CmdNew;
-import static com.proxyblob.protocol.ProtocolError.ErrConnectionNotFound;
-import static com.proxyblob.protocol.ProtocolError.ErrHandlerStopped;
-import static com.proxyblob.protocol.ProtocolError.ErrInvalidCommand;
-import static com.proxyblob.protocol.ProtocolError.ErrInvalidCrypto;
-import static com.proxyblob.protocol.ProtocolError.ErrInvalidPacket;
-import static com.proxyblob.protocol.ProtocolError.ErrNone;
-import static com.proxyblob.protocol.ProtocolError.ErrPacketSendFailed;
-import static com.proxyblob.protocol.ProtocolError.ErrTransportClosed;
 
 @Setter
 @Getter
 public class BaseHandler {
 
     private final Transport transport;
-
-    // Equivalent of sync.Map<UUID, Connection> in Go
-    private final ConcurrentMap<UUID, Connection> connections = new ConcurrentHashMap<>();
-
-    // Cancellation support
     private final AppContext context;
-
-    // Delegated packet handler
     private PacketHandler packetHandler;
+
+    private final ConcurrentMap<UUID, Connection> connections = new ConcurrentHashMap<>();
 
     public BaseHandler(Transport transport, PacketHandler packetHandler, AppContext context) {
         this.transport = transport;
         this.packetHandler = packetHandler;
         this.context = context;
     }
-
 
     public void start() {
         context.getReceiverExecutor().submit(this::receiveLoop);
@@ -71,14 +66,14 @@ public class BaseHandler {
 
             if (errCode != ErrNone) {
                 if (transport.isClosed(errCode)) {
-                    packetHandler.stop(); // завершение, если закрыт транспорт
+                    packetHandler.stop();
                     return;
                 }
 
-                if (!context.isStopped() && errCode != ProtocolError.ErrTransportError) {
+                if (!context.isStopped() && errCode != ErrTransportError) {
                     consecutiveErrors++;
                     if (consecutiveErrors == maxConsecutiveErrors) {
-                        return; // слишком много ошибок подряд
+                        return;
                     }
                     try {
                         Thread.sleep(consecutiveErrors * 50L);
@@ -103,7 +98,7 @@ public class BaseHandler {
 
             byte resultCode = handlePacket(packet);
             if (resultCode != ErrNone) {
-                if (!context.isStopped() && resultCode == ProtocolError.ErrConnectionClosed) {
+                if (!context.isStopped() && resultCode == ErrConnectionClosed) {
                     continue;
                 }
                 sendClose(packet.getConnectionId(), resultCode);
@@ -129,22 +124,20 @@ public class BaseHandler {
         X25519PrivateKeyParameters privateKey = keyPair.getPrivateKey();
         X25519PublicKeyParameters publicKey = keyPair.getPublicKey();
 
-        byte[] privateKeyBytes = privateKey.getEncoded(); // 32 bytes
-        byte[] publicKeyBytes = publicKey.getEncoded();   // 32 bytes
-        byte[] nonce = CryptoUtil.generateNonce();        // 24 bytes
+        byte[] privateKeyBytes = privateKey.getEncoded();
+        byte[] publicKeyBytes = publicKey.getEncoded();
+        byte[] nonce = CryptoUtil.generateNonce();
 
         Connection conn = connections.get(connectionId);
         if (conn == null) {
             return ErrConnectionNotFound;
         }
 
-        // Store (nonce + privateKey) for future use in ACK
         byte[] tempData = new byte[nonce.length + privateKeyBytes.length];
         System.arraycopy(nonce, 0, tempData, 0, nonce.length);
         System.arraycopy(privateKeyBytes, 0, tempData, nonce.length, privateKeyBytes.length);
         conn.setSecretKey(tempData);
 
-        // Prepare data to send: (nonce + publicKey)
         byte[] data = new byte[nonce.length + publicKeyBytes.length];
         System.arraycopy(nonce, 0, data, 0, nonce.length);
         System.arraycopy(publicKeyBytes, 0, data, nonce.length, publicKeyBytes.length);
@@ -158,12 +151,10 @@ public class BaseHandler {
             return ErrConnectionNotFound;
         }
 
-        // Генерация новой пары ключей
         KeyPair keyPair = CryptoUtil.generateKeyPair();
         X25519PrivateKeyParameters privateKey = keyPair.getPrivateKey();
         byte[] publicKeyBytes = keyPair.getPublicKey().getEncoded();
 
-        // Получение nonce и публичного ключа сервера из сохранённого SecretKey
         byte[] serverData = conn.getSecretKey();
         if (serverData == null || serverData.length < CryptoUtil.NONCE_SIZE + CryptoUtil.KEY_SIZE) {
             return ErrInvalidPacket;
@@ -184,7 +175,6 @@ public class BaseHandler {
 
         conn.setSecretKey(symmetricKey);
 
-        // Отправляем публичный ключ в ACK
         return sendPacket(CmdAck, connectionId, publicKeyBytes);
     }
 
@@ -195,7 +185,7 @@ public class BaseHandler {
         }
 
         CryptoResult result = CryptoUtil.encrypt(conn.getSecretKey(), data);
-        if (result.getStatus() != CryptoStatus.OK) {
+        if (result.getStatus() != ErrNone) {
             return ErrInvalidCrypto;
         }
 
@@ -243,7 +233,6 @@ public class BaseHandler {
         for (Map.Entry<UUID, Connection> entry : connections.entrySet()) {
             Connection conn = entry.getValue();
 
-            // Only close if not already closed
             if (!conn.getClosed().get()) {
                 conn.close();
             }

@@ -4,14 +4,14 @@ import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
 import lombok.experimental.UtilityClass;
 
-import static com.proxyblob.protocol.ProtocolError.ErrAddressNotSupported;
-import static com.proxyblob.protocol.ProtocolError.ErrAuthFailed;
-import static com.proxyblob.protocol.ProtocolError.ErrConnectionRefused;
-import static com.proxyblob.protocol.ProtocolError.ErrHostUnreachable;
-import static com.proxyblob.protocol.ProtocolError.ErrNetworkUnreachable;
-import static com.proxyblob.protocol.ProtocolError.ErrNone;
-import static com.proxyblob.protocol.ProtocolError.ErrTTLExpired;
-import static com.proxyblob.protocol.ProtocolError.ErrUnsupportedCommand;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrAddressNotSupported;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrAuthFailed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionRefused;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrHostUnreachable;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNetworkUnreachable;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrTTLExpired;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrUnsupportedCommand;
 import static com.proxyblob.proxy.socks.SocksConstants.AddressTypeNotSupported;
 import static com.proxyblob.proxy.socks.SocksConstants.CommandNotSupported;
 import static com.proxyblob.proxy.socks.SocksConstants.ConnectionRefused;
@@ -30,7 +30,6 @@ public class SocksErrorUtil {
     public static void sendError(BaseHandler baseHandler, Connection conn, byte errCode) {
         byte socksReplyCode = GeneralFailure;
 
-        // Map internal protocol errors to SOCKS5 reply codes
         switch (errCode) {
             case ErrNone -> socksReplyCode = Succeeded;
             case ErrNetworkUnreachable -> socksReplyCode = NetworkUnreachable;
@@ -42,7 +41,6 @@ public class SocksErrorUtil {
             case ErrAuthFailed -> socksReplyCode = NoAcceptableMethods;
         }
 
-        // 10-byte response: VER, REP, RSV, ATYP, BND.ADDR (IPv4), BND.PORT
         byte[] response = new byte[]{
                 Version5,
                 socksReplyCode,

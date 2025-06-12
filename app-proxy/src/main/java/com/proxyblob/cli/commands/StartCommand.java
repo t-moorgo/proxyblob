@@ -44,7 +44,6 @@ public class StartCommand implements Runnable {
         }
 
         try {
-            // Валидация контейнера
             storageManager.validateAgent(containerId);
 
             BlobContainerClient containerClient = storageManager

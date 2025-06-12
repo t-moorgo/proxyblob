@@ -4,7 +4,7 @@ import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
 import lombok.RequiredArgsConstructor;
 
-import static com.proxyblob.protocol.ProtocolError.ErrUnsupportedCommand;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrUnsupportedCommand;
 
 @RequiredArgsConstructor
 public class SocksBindHandler {

@@ -1,7 +1,6 @@
 package com.proxyblob.protocol;
 
 import com.proxyblob.protocol.dto.CryptoResult;
-import com.proxyblob.protocol.dto.CryptoStatus;
 import com.proxyblob.protocol.dto.KeyPair;
 import lombok.experimental.UtilityClass;
 import org.bouncycastle.crypto.InvalidCipherTextException;
@@ -16,6 +15,9 @@ import org.bouncycastle.crypto.params.X25519PublicKeyParameters;
 
 import java.security.SecureRandom;
 
+import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidCrypto;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
+
 @UtilityClass
 public class CryptoUtil {
 
@@ -29,7 +31,6 @@ public class CryptoUtil {
         byte[] privateBytes = new byte[KEY_SIZE];
         SECURE_RANDOM.nextBytes(privateBytes);
 
-        // Manual clamping for X25519 (optional but for parity with Go)
         privateBytes[0] &= 248;
         privateBytes[31] &= 127;
         privateBytes[31] |= 64;
@@ -115,10 +116,10 @@ public class CryptoUtil {
     }
 
     private static CryptoResult error() {
-        return new CryptoResult(null, CryptoStatus.INVALID_CRYPTO);
+        return new CryptoResult(null, ErrInvalidCrypto);
     }
 
     private static CryptoResult ok(byte[] data) {
-        return new CryptoResult(data, CryptoStatus.OK);
+        return new CryptoResult(data, ErrNone);
     }
 }

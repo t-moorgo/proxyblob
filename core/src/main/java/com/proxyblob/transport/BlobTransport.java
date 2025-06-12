@@ -14,6 +14,8 @@ import lombok.RequiredArgsConstructor;
 import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 
+import static com.proxyblob.errorcodes.ErrorCodes.*;
+
 @RequiredArgsConstructor
 public class BlobTransport implements Transport {
 
@@ -37,7 +39,7 @@ public class BlobTransport implements Transport {
 
     @Override
     public boolean isClosed(byte errorCode) {
-        return errorCode == Transport.ErrTransportClosed;
+        return errorCode == ErrTransportClosed;
     }
 
     private byte writeBlob(BlockBlobClient blob, byte[] data) {
@@ -45,18 +47,18 @@ public class BlobTransport implements Transport {
 
         while (true) {
             if (context.isStopped()) {
-                return Transport.ErrContextCanceled;
+                return ErrContextCanceled;
             }
 
             CheckResult check = isBlobEmpty(blob);
-            if (check.getErrorCode() != Transport.ErrNone) {
+            if (check.getErrorCode() != ErrNone) {
                 return check.getErrorCode();
             }
 
             if (!check.isEmpty()) {
                 DelayResult delayResult = waitDelay(delay);
                 delay = delayResult.getNextDelay();
-                if (delayResult.getErrorCode() != Transport.ErrNone) {
+                if (delayResult.getErrorCode() != ErrNone) {
                     return delayResult.getErrorCode();
                 }
                 continue;
@@ -66,15 +68,15 @@ public class BlobTransport implements Transport {
 
             try {
                 blob.upload(BinaryData.fromBytes(data), true);
-                return Transport.ErrNone;
+                return ErrNone;
             } catch (BlobStorageException e) {
                 if (context.isStopped()) {
-                    return Transport.ErrContextCanceled;
+                    return ErrContextCanceled;
                 }
 
                 DelayResult delayResult = waitDelay(delay);
                 delay = delayResult.getNextDelay();
-                if (delayResult.getErrorCode() != Transport.ErrNone) {
+                if (delayResult.getErrorCode() != ErrNone) {
                     return delayResult.getErrorCode();
                 }
             }
@@ -86,18 +88,18 @@ public class BlobTransport implements Transport {
 
         while (true) {
             if (context.isStopped()) {
-                return new ReceiveResult(null, Transport.ErrContextCanceled);
+                return new ReceiveResult(null, ErrContextCanceled);
             }
 
             CheckResult check = isBlobEmpty(blob);
-            if (check.getErrorCode() != Transport.ErrNone) {
+            if (check.getErrorCode() != ErrNone) {
                 return new ReceiveResult(null, check.getErrorCode());
             }
 
             if (check.isEmpty()) {
                 DelayResult wait = waitDelay(delay);
                 delay = wait.getNextDelay();
-                if (wait.getErrorCode() != Transport.ErrNone) {
+                if (wait.getErrorCode() != ErrNone) {
                     return new ReceiveResult(null, wait.getErrorCode());
                 }
                 continue;
@@ -114,23 +116,23 @@ public class BlobTransport implements Transport {
             }
 
             byte clearResult = clearBlob(blob);
-            if (clearResult != Transport.ErrNone) {
+            if (clearResult != ErrNone) {
                 return new ReceiveResult(null, clearResult);
             }
 
-            return new ReceiveResult(data, Transport.ErrNone);
+            return new ReceiveResult(data, ErrNone);
         }
     }
 
     private CheckResult isBlobEmpty(BlockBlobClient blob) {
         if (context.isStopped()) {
-            return new CheckResult(false, Transport.ErrContextCanceled);
+            return new CheckResult(false, ErrContextCanceled);
         }
 
         try {
             BlobProperties props = blob.getProperties();
             boolean empty = props.getBlobSize() == 0;
-            return new CheckResult(empty, Transport.ErrNone);
+            return new CheckResult(empty, ErrNone);
         } catch (BlobStorageException e) {
             return new CheckResult(false, blobError(e));
         }
@@ -141,19 +143,19 @@ public class BlobTransport implements Transport {
 
         while (true) {
             if (context.isStopped()) {
-                return Transport.ErrContextCanceled;
+                return ErrContextCanceled;
             }
 
             try {
                 blob.upload(BinaryData.fromBytes(new byte[0]), true);
-                return Transport.ErrNone;
+                return ErrNone;
             } catch (BlobStorageException e) {
                 //TODO что то сделать
             }
 
             DelayResult result = waitDelay(delay);
             delay = result.getNextDelay();
-            if (result.getErrorCode() != Transport.ErrNone) {
+            if (result.getErrorCode() != ErrNone) {
                 return result.getErrorCode();
             }
         }
@@ -161,12 +163,12 @@ public class BlobTransport implements Transport {
 
     private byte blobError(Throwable err) {
         if (err == null) {
-            return Transport.ErrNone;
+            return ErrNone;
         }
 
         if (err instanceof InterruptedException) {
             Thread.currentThread().interrupt();
-            return Transport.ErrContextCanceled;
+            return ErrContextCanceled;
         }
 
         if (err instanceof BlobStorageException e) {
@@ -175,16 +177,16 @@ public class BlobTransport implements Transport {
             if (BlobErrorCode.CONTAINER_NOT_FOUND.toString().equals(code)
                     || BlobErrorCode.CONTAINER_BEING_DELETED.toString().equals(code)
                     || BlobErrorCode.ACCOUNT_BEING_CREATED.toString().equals(code)) {
-                return Transport.ErrTransportClosed;
+                return ErrTransportClosed;
             }
         }
 
-        return Transport.ErrTransportError;
+        return ErrTransportError;
     }
 
     private DelayResult waitDelay(Duration retryDelay) {
         if (context.isStopped()) {
-            return new DelayResult(Duration.ZERO, Transport.ErrContextCanceled);
+            return new DelayResult(Duration.ZERO, ErrContextCanceled);
         }
 
         long millis = retryDelay.toMillis();
@@ -193,7 +195,7 @@ public class BlobTransport implements Transport {
         try {
             while (slept < millis) {
                 if (context.isStopped()) {
-                    return new DelayResult(Duration.ZERO, Transport.ErrContextCanceled);
+                    return new DelayResult(Duration.ZERO, ErrContextCanceled);
                 }
                 long chunk = Math.min(100, millis - slept);
                 Thread.sleep(chunk);
@@ -201,10 +203,10 @@ public class BlobTransport implements Transport {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new DelayResult(Duration.ZERO, Transport.ErrContextCanceled);
+            return new DelayResult(Duration.ZERO, ErrContextCanceled);
         }
 
         long next = Math.min((long) (retryDelay.toMillis() * BackoffFactor), MaxRetryDelay.toMillis());
-        return new DelayResult(Duration.ofMillis(next), Transport.ErrNone);
+        return new DelayResult(Duration.ofMillis(next), ErrNone);
     }
 }

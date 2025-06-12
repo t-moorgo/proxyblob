@@ -1,7 +1,5 @@
 package com.proxyblob.proxy;
 
-import com.proxyblob.protocol.ProtocolError;
-
 import java.util.UUID;
 
 public interface PacketHandler {

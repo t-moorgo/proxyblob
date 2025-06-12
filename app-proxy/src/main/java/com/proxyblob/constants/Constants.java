@@ -2,9 +2,9 @@ package com.proxyblob.constants;
 
 public class Constants {
 
-    public static final String InfoBlobName = "info";     // agent metadata
-    public static final String RequestBlobName = "request"; // proxy-to-agent traffic
-    public static final String ResponseBlobName = "response"; // agent-to-proxy traffic
+    public static final String InfoBlobName = "info";
+    public static final String RequestBlobName = "request";
+    public static final String ResponseBlobName = "response";
     public static final byte[] InfoKey = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xB1, 0x0B};
     public static final String Banner = """
                 

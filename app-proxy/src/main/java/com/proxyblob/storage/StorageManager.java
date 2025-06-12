@@ -88,16 +88,14 @@ public class StorageManager {
                 blobClient.setMetadata(metadata);
             }
 
-            // Генерация SAS токена
             String sasToken = generateSasToken(containerId, expiry);
 
-            // Формирование connection string
             URI baseUri = new URI(serviceClient.getAccountUrl());
             String connectionString = baseUri.resolve("/" + containerId) + "?" + sasToken;
 
             return new ContainerCreationResult(containerId, connectionString);
         } catch (Exception e) {
-            // Удаляем контейнер при ошибке
+            //TODO что то написать
             try {
                 containerClient.delete();
             } catch (Exception ignored) {
@@ -107,24 +105,19 @@ public class StorageManager {
     }
 
     public String generateSasToken(String containerName, Duration expiry) {
-        // Начало времени — 5 минут назад, чтобы избежать проблем со сдвигом времени
         OffsetDateTime startTime = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(5);
 
-        // Время истечения действия токена
         OffsetDateTime expiryTime = OffsetDateTime.now(ZoneOffset.UTC).plus(expiry);
 
-        // Права доступа (чтение и запись)
         BlobContainerSasPermission permissions = new BlobContainerSasPermission()
                 .setReadPermission(true)
                 .setWritePermission(true);
 
-        // Формируем параметры SAS
         BlobServiceSasSignatureValues sasValues = new BlobServiceSasSignatureValues(expiryTime, permissions)
                 .setStartTime(startTime)
                 .setProtocol(SasProtocol.HTTPS_HTTP)
                 .setContainerName(containerName);
 
-        // Генерация токена
         BlobContainerClient containerClient = serviceClient.getBlobContainerClient(containerName);
         return containerClient.generateSas(sasValues);
     }
@@ -132,13 +125,11 @@ public class StorageManager {
     public List<ContainerInfo> listAgentContainers() {
         List<ContainerInfo> containers = new ArrayList<>();
 
-        // Итерация по всем контейнерам
         PagedIterable<BlobContainerItem> containerItems = serviceClient.listBlobContainers();
         for (BlobContainerItem containerItem : containerItems) {
             String containerName = containerItem.getName();
             BlobContainerClient containerClient = serviceClient.getBlobContainerClient(containerName);
 
-            // Попытка получить InfoBlob
             BlockBlobClient infoBlob = containerClient
                     .getBlobClient(Constants.InfoBlobName)
                     .getBlockBlobClient();
@@ -153,11 +144,10 @@ public class StorageManager {
                 byte[] decrypted = CryptoUtil.xor(outputStream.toByteArray(), Constants.InfoKey);
                 agentInfo = new String(decrypted, StandardCharsets.UTF_8);
             } catch (IOException e) {
-                // Можно залогировать через логгер
+                //TODO что то написать
                 continue;
             }
 
-            // Попытка получить дату последней активности из ResponseBlob
             OffsetDateTime lastActivity;
             try {
                 BlockBlobClient responseBlob = containerClient
@@ -166,11 +156,9 @@ public class StorageManager {
 
                 lastActivity = responseBlob.getProperties().getLastModified();
             } catch (BlobStorageException e) {
-                // Если не удалось — используем дату создания контейнера
                 lastActivity = containerItem.getProperties().getLastModified();
             }
 
-            // Определение порта активного прокси (если запущен)
             String proxyPort = null;
             if (AppState.isProxyRunning(containerName)) {
                 ProxyServer proxy = AppState.getProxy(containerName);
@@ -182,7 +170,6 @@ public class StorageManager {
                 }
             }
 
-            // Добавление в список
             containers.add(new ContainerInfo(
                     containerName,
                     agentInfo,
@@ -196,7 +183,6 @@ public class StorageManager {
     }
 
     public void deleteAgentContainer(String containerId) {
-        // Завершение запущенного прокси для этого контейнера (если есть)
         if (AppState.isProxyRunning(containerId)) {
             ProxyServer proxyServer = AppState.getProxy(containerId);
             if (proxyServer != null) {

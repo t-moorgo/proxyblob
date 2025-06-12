@@ -31,13 +31,10 @@ public class SelectCommand implements Runnable {
     @Override
     public void run() {
         try {
-            // Проверка, существует ли агент
             storageManager.validateAgent(containerId);
 
-            // Сохраняем выбранного агента
             AppState.setSelectedAgent(containerId);
 
-            // Получаем информацию об агенте
             String agentInfo = storageManager.getSelectedAgentInfo(containerId);
             if (agentInfo == null || agentInfo.isBlank()) {
                 agentInfo = "unknown@host";

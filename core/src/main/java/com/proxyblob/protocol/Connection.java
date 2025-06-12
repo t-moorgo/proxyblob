@@ -11,46 +11,30 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.proxyblob.protocol.ProtocolError.ErrConnectionClosed;
-import static com.proxyblob.protocol.ProtocolError.ErrNone;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionClosed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 
 @Getter
 @Setter
 public class Connection {
 
-    // ConnectionState enum (matching Go iota)
     public static final int StateNew = 0;
     public static final int StateConnected = 1;
     public static final int StateClosed = 2;
 
-    // ID uniquely identifies the connection
     private final UUID id;
-
-    // State indicates current connection lifecycle phase
-    private volatile int state;
-
-    // Conn holds the network connection (optional)
-    private Socket socket;
-
-    private DatagramSocket datagramSocket;
-
-    // ReadBuffer receives data from the remote endpoint
     private final BlockingQueue<byte[]> readBuffer;
-
-    // Closed signals connection termination
-    private final AtomicBoolean closed = new AtomicBoolean(false);
-
-    // CreatedAt records connection creation time
     private final Instant createdAt;
 
-    // LastActivity tracks most recent data transfer
     private volatile Instant lastActivity;
+    private volatile int state;
 
-    private final Object closeSignal = new Object();
-
-
-    // SecretKey holds encryption key for secure communication
+    private Socket socket;
+    private DatagramSocket datagramSocket;
     private byte[] secretKey;
+
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final Object closeSignal = new Object();
 
     public Connection(UUID id) {
         this.id = id;
@@ -69,7 +53,7 @@ public class Connection {
 
         if (closed.compareAndSet(false, true)) {
             synchronized (closeSignal) {
-                closeSignal.notifyAll(); // 🔔 разблокирует ожидающих
+                closeSignal.notifyAll();
             }
 
             if (socket != null && !socket.isClosed()) {
@@ -87,7 +71,7 @@ public class Connection {
     public void awaitClose() throws InterruptedException {
         synchronized (closeSignal) {
             while (!closed.get()) {
-                closeSignal.wait(); // 🔒 блокировка до закрытия
+                closeSignal.wait();
             }
         }
     }

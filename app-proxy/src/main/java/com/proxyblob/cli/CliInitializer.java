@@ -50,7 +50,7 @@ public class CliInitializer {
                 return args[i + 1];
             }
         }
-        return "config.json"; // значение по умолчанию
+        return "config.json";
     }
 
     private static void printBanner() {

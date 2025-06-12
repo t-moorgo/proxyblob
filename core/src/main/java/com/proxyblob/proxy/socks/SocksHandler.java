@@ -5,23 +5,22 @@ import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
 import com.proxyblob.protocol.CryptoUtil;
 import com.proxyblob.protocol.dto.CryptoResult;
-import com.proxyblob.protocol.dto.CryptoStatus;
 import com.proxyblob.proxy.PacketHandler;
 import com.proxyblob.transport.Transport;
 
 import java.util.UUID;
 
-import static com.proxyblob.protocol.ProtocolError.ErrAuthFailed;
-import static com.proxyblob.protocol.ProtocolError.ErrConnectionClosed;
-import static com.proxyblob.protocol.ProtocolError.ErrConnectionExists;
-import static com.proxyblob.protocol.ProtocolError.ErrConnectionNotFound;
-import static com.proxyblob.protocol.ProtocolError.ErrHandlerStopped;
-import static com.proxyblob.protocol.ProtocolError.ErrInvalidCrypto;
-import static com.proxyblob.protocol.ProtocolError.ErrInvalidPacket;
-import static com.proxyblob.protocol.ProtocolError.ErrInvalidSocksVersion;
-import static com.proxyblob.protocol.ProtocolError.ErrNone;
-import static com.proxyblob.protocol.ProtocolError.ErrUnexpectedPacket;
-import static com.proxyblob.protocol.ProtocolError.ErrUnsupportedCommand;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrAuthFailed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionClosed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionExists;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionNotFound;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrHandlerStopped;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidCrypto;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidPacket;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidSocksVersion;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrUnexpectedPacket;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrUnsupportedCommand;
 import static com.proxyblob.proxy.socks.SocksConstants.Bind;
 import static com.proxyblob.proxy.socks.SocksConstants.Connect;
 import static com.proxyblob.proxy.socks.SocksConstants.NoAuth;
@@ -98,7 +97,7 @@ public class SocksHandler implements PacketHandler {
         }
 
         CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), data);
-        if (result.getStatus() != CryptoStatus.OK) {
+        if (result.getStatus() != ErrNone) {
             baseHandler.sendClose(connectionId, ErrInvalidCrypto);
             return ErrInvalidCrypto;
         }
@@ -120,7 +119,7 @@ public class SocksHandler implements PacketHandler {
     public byte onClose(UUID connectionId, byte errorCode) {
         Connection value = baseHandler.getConnections().get(connectionId);
         if (value == null) {
-            return ErrNone; // Connection already removed
+            return ErrNone;
         }
 
         value.close();
@@ -153,7 +152,7 @@ public class SocksHandler implements PacketHandler {
 
     private byte handleAuthNegotiation(Connection conn) {
         try {
-            byte[] methods = conn.getReadBuffer().take(); // блокирующий вызов
+            byte[] methods = conn.getReadBuffer().take();
 
             boolean noAuthSupported = false;
             for (byte b : methods) {
@@ -188,7 +187,7 @@ public class SocksHandler implements PacketHandler {
 
     private byte handleCommand(Connection conn) {
         try {
-            byte[] cmdData = conn.getReadBuffer().take(); // блокирующий вызов
+            byte[] cmdData = conn.getReadBuffer().take();
 
             if (cmdData.length < 4) {
                 SocksErrorUtil.sendError(baseHandler, conn, ErrInvalidPacket);
@@ -227,7 +226,7 @@ public class SocksHandler implements PacketHandler {
 
     private byte handleDataTransfer(Connection conn) {
         try {
-            conn.awaitClose(); // блокируемся до закрытия соединения
+            conn.awaitClose();
             return ErrNone;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

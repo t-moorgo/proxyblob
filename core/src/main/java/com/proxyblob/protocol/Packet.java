@@ -8,13 +8,11 @@ import java.util.UUID;
 @Getter
 public class Packet {
 
-    // Command types
     public static final byte CmdNew = 1;
     public static final byte CmdAck = 2;
     public static final byte CmdData = 3;
     public static final byte CmdClose = 4;
 
-    // Field sizes
     public static final int CommandSize = 1;
     public static final int UUIDSize = 16;
     public static final int DataLengthSize = 4;

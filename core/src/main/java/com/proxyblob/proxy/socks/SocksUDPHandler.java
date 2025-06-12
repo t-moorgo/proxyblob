@@ -22,10 +22,10 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNetworkUnreachable;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrPacketSendFailed;
 import static com.proxyblob.protocol.Connection.StateConnected;
-import static com.proxyblob.protocol.ProtocolError.ErrNetworkUnreachable;
-import static com.proxyblob.protocol.ProtocolError.ErrNone;
-import static com.proxyblob.protocol.ProtocolError.ErrPacketSendFailed;
 import static com.proxyblob.proxy.socks.SocksConstants.IPv4;
 import static com.proxyblob.proxy.socks.SocksConstants.Succeeded;
 import static com.proxyblob.proxy.socks.SocksConstants.Version5;

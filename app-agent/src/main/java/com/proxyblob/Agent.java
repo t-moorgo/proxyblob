@@ -25,24 +25,23 @@ import java.util.Base64;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import static com.proxyblob.constants.Constants.ErrConnectionStringError;
+import static com.proxyblob.constants.Constants.ErrContainerNotFound;
+import static com.proxyblob.constants.Constants.ErrContextCanceled;
+import static com.proxyblob.constants.Constants.ErrInfoBlobError;
+import static com.proxyblob.constants.Constants.ErrNoConnectionString;
+import static com.proxyblob.constants.Constants.InfoBlobName;
+import static com.proxyblob.constants.Constants.InfoKey;
+import static com.proxyblob.constants.Constants.RequestBlobName;
+import static com.proxyblob.constants.Constants.ResponseBlobName;
+import static com.proxyblob.constants.Constants.Success;
+
 @Getter
 @RequiredArgsConstructor
 public class Agent {
 
-    public static final int Success = 0;
-    public static final int ErrContextCanceled = 1;
-    public static final int ErrNoConnectionString = 2;
-    public static final int ErrConnectionStringError = 3;
-    public static final int ErrInfoBlobError = 4;
-    public static final int ErrContainerNotFound = 5;
-
-    private static final String InfoBlobName = "info";
-    private static final String RequestBlobName = "request";
-    private static final String ResponseBlobName = "response";
-    private static final byte[] InfoKey = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xB1, 0x0B};
-
-    private final BlobContainerClient containerClient; // аналог azblob.ContainerURL
-    private final SocksHandler handler;                // аналог proxy.SocksHandler
+    private final BlobContainerClient containerClient;
+    private final SocksHandler handler;
 
     public AgentCreationResult create(AppContext context, String connString) {
         ParseResult parsed = parseConnectionString(connString);
@@ -71,23 +70,19 @@ public class Agent {
     }
 
     public int start(AppContext context) {
-        // Запись agent info в blob
         int result = writeInfoBlob();
         if (result != Success) {
             stop();
             return ErrContainerNotFound;
         }
 
-        // Запускаем мониторинг контейнера
         context.getGeneralExecutor().submit(() -> healthCheck(context));
 
-        // Запускаем обработчик SOCKS
         handler.start("");
 
-        // Ждём завершения по флагу контекста
         while (!context.isStopped()) {
             try {
-                Thread.sleep(200); // Можно уменьшить/увеличить по ситуации
+                Thread.sleep(200);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return ErrContextCanceled;
@@ -116,7 +111,7 @@ public class Agent {
                         .getBlobClient(InfoBlobName)
                         .getBlockBlobClient();
 
-                blob.getProperties(); // Попытка получить метаданные блоба
+                blob.getProperties();
 
             } catch (BlobStorageException e) {
                 String code = e.getErrorCode().toString();
@@ -124,7 +119,7 @@ public class Agent {
                     stop();
                 }
             } catch (Exception e) {
-                // Прочие ошибки — можно залогировать позже
+                //TODO что то прописать
             }
         };
 
@@ -172,7 +167,7 @@ public class Agent {
                 return error();
             }
 
-            String containerId = path.substring(1); // Remove leading '/'
+            String containerId = path.substring(1);
             String query = url.getQuery();
             if (query == null || query.isEmpty()) {
                 return error();

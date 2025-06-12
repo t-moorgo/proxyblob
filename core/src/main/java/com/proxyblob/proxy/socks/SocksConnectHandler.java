@@ -2,7 +2,6 @@ package com.proxyblob.proxy.socks;
 
 import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
-import com.proxyblob.protocol.ProtocolError;
 import com.proxyblob.proxy.socks.dto.ParsedAddress;
 import lombok.RequiredArgsConstructor;
 
@@ -22,14 +21,16 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import static com.proxyblob.errorcodes.ErrorCodes.ErrAddressNotSupported;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionClosed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionRefused;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrHandlerStopped;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrHostUnreachable;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNetworkUnreachable;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrPacketSendFailed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrTTLExpired;
 import static com.proxyblob.protocol.Connection.StateConnected;
-import static com.proxyblob.protocol.ProtocolError.ErrAddressNotSupported;
-import static com.proxyblob.protocol.ProtocolError.ErrConnectionRefused;
-import static com.proxyblob.protocol.ProtocolError.ErrHostUnreachable;
-import static com.proxyblob.protocol.ProtocolError.ErrNetworkUnreachable;
-import static com.proxyblob.protocol.ProtocolError.ErrNone;
-import static com.proxyblob.protocol.ProtocolError.ErrPacketSendFailed;
-import static com.proxyblob.protocol.ProtocolError.ErrTTLExpired;
 import static com.proxyblob.proxy.socks.SocksConstants.GeneralFailure;
 import static com.proxyblob.proxy.socks.SocksConstants.IPv4;
 import static com.proxyblob.proxy.socks.SocksConstants.Succeeded;
@@ -49,7 +50,6 @@ public class SocksConnectHandler {
             return ErrAddressNotSupported;
         }
 
-        // Parse target
         ParsedAddress parsedAddress = SocksAddressParser.parseAddress(
                 Arrays.copyOfRange(cmdData, 3, cmdData.length)
         );
@@ -67,7 +67,7 @@ public class SocksConnectHandler {
 
             SocketAddress sockaddr = new InetSocketAddress(host, port);
             targetSocket = new Socket();
-            targetSocket.connect(sockaddr, 10_000); // 10 sec timeout
+            targetSocket.connect(sockaddr, 10_000);
 
         } catch (SocketTimeoutException e) {
             errCode = ErrTTLExpired;
@@ -87,7 +87,6 @@ public class SocksConnectHandler {
             return errCode;
         }
 
-        // Send success response
         InetSocketAddress local = (InetSocketAddress) targetSocket.getLocalSocketAddress();
         byte[] ipBytes = local.getAddress().getAddress();
         int port = local.getPort();
@@ -120,7 +119,6 @@ public class SocksConnectHandler {
         BlockingQueue<byte[]> targetToClient = new LinkedBlockingQueue<>();
         BlockingQueue<Byte> errorQueue = new ArrayBlockingQueue<>(2);
 
-        // From SOCKS client → target
         baseHandler.getContext().getGeneralExecutor().submit(() -> {
             try {
                 while (true) {
@@ -136,14 +134,13 @@ public class SocksConnectHandler {
             }
         });
 
-        // From target → SOCKS client
         baseHandler.getContext().getGeneralExecutor().submit(() -> {
             try (InputStream in = tcpConn.getInputStream()) {
                 byte[] buffer = new byte[128 * 1024];
                 while (true) {
                     int read = in.read(buffer);
                     if (read == -1) {
-                        errorQueue.put(ProtocolError.ErrConnectionClosed);
+                        errorQueue.put(ErrConnectionClosed);
                         break;
                     }
 
@@ -153,15 +150,16 @@ public class SocksConnectHandler {
             } catch (SocketTimeoutException e) {
                 try {
                     errorQueue.put(ErrTTLExpired);
-                } catch (InterruptedException ignored) {}
+                } catch (InterruptedException ignored) {
+                }
             } catch (IOException | InterruptedException e) {
                 try {
                     errorQueue.put(ErrHostUnreachable);
-                } catch (InterruptedException ignored) {}
+                } catch (InterruptedException ignored) {
+                }
             }
         });
 
-        // Main loop
         try {
             while (true) {
                 if (conn.getClosed().get()) {
@@ -171,7 +169,7 @@ public class SocksConnectHandler {
 
                 if (baseHandler.getContext().isStopped()) {
                     tcpConn.close();
-                    return ProtocolError.ErrHandlerStopped;
+                    return ErrHandlerStopped;
                 }
 
                 Byte err = errorQueue.poll(100, TimeUnit.MILLISECONDS);
@@ -206,8 +204,10 @@ public class SocksConnectHandler {
             Thread.currentThread().interrupt();
             try {
                 tcpConn.close();
-            } catch (IOException ignored) {}
-            return ProtocolError.ErrHandlerStopped;
+            } catch (IOException ignored) {
+                //TODO что то сделать
+            }
+            return ErrHandlerStopped;
         }
     }
 

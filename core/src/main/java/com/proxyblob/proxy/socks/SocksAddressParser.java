@@ -8,9 +8,9 @@ import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
-import static com.proxyblob.protocol.ProtocolError.ErrAddressNotSupported;
-import static com.proxyblob.protocol.ProtocolError.ErrInvalidPacket;
-import static com.proxyblob.protocol.ProtocolError.ErrNone;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrAddressNotSupported;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidPacket;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 import static com.proxyblob.proxy.socks.SocksConstants.Domain;
 import static com.proxyblob.proxy.socks.SocksConstants.IPv4;
 import static com.proxyblob.proxy.socks.SocksConstants.IPv6;
@@ -35,7 +35,7 @@ public class SocksAddressParser {
     }
 
     public static ParsedAddress extractUDPHeader(byte[] data) {
-        int headerLen = 4; // RSV(2) + FRAG(1) + ATYP(1)
+        int headerLen = 4;
 
         if (data == null || data.length < 5) {
             return new ParsedAddress(null, 0, ErrInvalidPacket);

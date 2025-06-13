@@ -1,7 +1,7 @@
 package com.proxyblob.cli;
 
-import com.proxyblob.state.AppState;
 import com.proxyblob.dto.ContainerInfo;
+import com.proxyblob.state.AppState;
 
 import java.util.Collections;
 import java.util.Iterator;

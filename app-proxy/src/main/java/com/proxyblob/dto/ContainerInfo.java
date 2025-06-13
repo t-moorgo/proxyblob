@@ -1,13 +1,13 @@
 package com.proxyblob.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Builder;
+import lombok.Getter;
 
 import java.time.Instant;
 
-@Data
-@AllArgsConstructor
-public class ContainerInfo {
+@Getter
+@Builder
+public final class ContainerInfo {
     private String id;
     private String agentInfo;
     private String proxyPort;

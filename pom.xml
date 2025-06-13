@@ -30,6 +30,7 @@
         <asciitable.version>0.3.2</asciitable.version>
         <assembly.plugin.version>3.7.1</assembly.plugin.version>
         <jline.version>3.30.4</jline.version>
+        <commons.lang3.version>3.17.0</commons.lang3.version>
     </properties>
 
     <dependencyManagement>
@@ -83,6 +84,11 @@
                 <groupId>org.jline</groupId>
                 <artifactId>jline</artifactId>
                 <version>${jline.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons.lang3.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -13,13 +13,13 @@ import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 import com.azure.storage.blob.specialized.BlockBlobClient;
 import com.azure.storage.common.StorageSharedKeyCredential;
 import com.azure.storage.common.sas.SasProtocol;
-import com.proxyblob.dto.ContainerCreationResult;
-import com.proxyblob.state.AppState;
-import com.proxyblob.constants.Constants;
-import com.proxyblob.dto.ContainerInfo;
 import com.proxyblob.config.Config;
+import com.proxyblob.dto.ContainerCreationResult;
+import com.proxyblob.dto.ContainerInfo;
 import com.proxyblob.protocol.CryptoUtil;
 import com.proxyblob.proxy.server.ProxyServer;
+import com.proxyblob.state.AppState;
+import com.proxyblob.util.Constants;
 import lombok.Getter;
 
 import java.io.ByteArrayInputStream;
@@ -36,8 +36,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import static com.proxyblob.constants.Constants.InfoBlobName;
-import static com.proxyblob.constants.Constants.InfoKey;
+import static com.proxyblob.util.Constants.InfoBlobName;
+import static com.proxyblob.util.Constants.InfoKey;
 
 @Getter
 public class StorageManager {
@@ -93,7 +93,10 @@ public class StorageManager {
             URI baseUri = new URI(serviceClient.getAccountUrl());
             String connectionString = baseUri.resolve("/" + containerId) + "?" + sasToken;
 
-            return new ContainerCreationResult(containerId, connectionString);
+            return ContainerCreationResult.builder()
+                    .containerId(containerId)
+                    .connectionString(connectionString)
+                    .build();
         } catch (Exception e) {
             //TODO что то написать
             try {
@@ -170,13 +173,14 @@ public class StorageManager {
                 }
             }
 
-            containers.add(new ContainerInfo(
-                    containerName,
-                    agentInfo,
-                    proxyPort,
-                    containerItem.getProperties().getLastModified().toInstant(),
-                    lastActivity.toInstant()
-            ));
+            ContainerInfo containerInfo = ContainerInfo.builder()
+                    .id(containerName)
+                    .agentInfo(agentInfo)
+                    .proxyPort(proxyPort)
+                    .createdAt(containerItem.getProperties().getLastModified().toInstant())
+                    .lastActivity(lastActivity.toInstant())
+                    .build();
+            containers.add(containerInfo);
         }
 
         return containers;

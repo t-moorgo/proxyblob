@@ -27,7 +27,7 @@ import static com.proxyblob.proxy.socks.SocksConstants.Version5;
 @UtilityClass
 public class SocksErrorUtil {
 
-    public static void sendError(BaseHandler baseHandler, Connection conn, byte errCode) {
+    public void sendError(BaseHandler baseHandler, Connection conn, byte errCode) {
         byte socksReplyCode = GeneralFailure;
 
         switch (errCode) {

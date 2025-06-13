@@ -1,11 +1,11 @@
 package com.proxyblob.proxy.socks.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Builder;
+import lombok.Getter;
 
-@Data
-@AllArgsConstructor
-public class ParsedAddress {
+@Getter
+@Builder
+public final class ParsedAddress {
     private String hostAndPort;
     private int consumedBytes;
     private byte errorCode;

@@ -2,10 +2,11 @@ package com.proxyblob;
 
 import com.proxyblob.context.AppContext;
 import com.proxyblob.dto.AgentCreationResult;
+import com.proxyblob.util.AgentUtil;
 
-import static com.proxyblob.constants.Constants.ErrNoConnectionString;
-import static com.proxyblob.constants.Constants.Success;
-import static com.proxyblob.constants.Constants.connStringRef;
+import static com.proxyblob.util.Constants.ErrNoConnectionString;
+import static com.proxyblob.util.Constants.Success;
+import static com.proxyblob.util.Constants.connStringRef;
 
 public class MainAgent {
 
@@ -26,14 +27,13 @@ public class MainAgent {
 
         Runtime.getRuntime().addShutdownHook(new Thread(context::stop));
 
-        Agent temp = new Agent(null, null);
-        AgentCreationResult result = temp.create(context, connString);
+        AgentCreationResult result = AgentUtil.create(context, connString);
 
         if (result.getStatus() != Success) {
             System.exit(result.getStatus());
         }
 
-        int exitCode = result.getAgent().start(context);
+        int exitCode = AgentUtil.start(context, result.getAgent());
         System.exit(exitCode);
     }
 }

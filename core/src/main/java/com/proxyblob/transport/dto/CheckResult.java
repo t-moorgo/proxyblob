@@ -1,11 +1,11 @@
 package com.proxyblob.transport.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Builder;
+import lombok.Getter;
 
-@Data
-@AllArgsConstructor
-public class CheckResult {
+@Getter
+@Builder
+public final class CheckResult {
     private boolean isEmpty;
     private byte errorCode;
 }

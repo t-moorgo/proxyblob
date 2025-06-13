@@ -2,7 +2,7 @@ package com.proxyblob.cli.commands;
 
 import com.proxyblob.dto.ContainerInfo;
 import com.proxyblob.storage.StorageManager;
-import com.proxyblob.view.TableRenderer;
+import com.proxyblob.util.TableRenderer;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

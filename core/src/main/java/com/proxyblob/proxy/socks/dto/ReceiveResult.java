@@ -1,11 +1,11 @@
 package com.proxyblob.proxy.socks.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Builder;
+import lombok.Getter;
 
-@Data
-@AllArgsConstructor
-public class ReceiveResult {
+@Getter
+@Builder
+public final class ReceiveResult {
     private byte[] data;
     private byte errorCode;
 }

@@ -1,8 +1,11 @@
 package com.proxyblob.config;
 
+import lombok.experimental.UtilityClass;
+
+@UtilityClass
 public class LoggingConfig {
 
-    public static void configureLogging() {
+    public void configureLogging() {
         if (System.getProperty("org.slf4j.simpleLogger.defaultLogLevel") == null) {
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "info");
         }

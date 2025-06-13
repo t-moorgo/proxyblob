@@ -1,18 +1,18 @@
 package com.proxyblob.cli;
 
-import com.proxyblob.state.AppState;
-import com.proxyblob.config.Config;
-import com.proxyblob.storage.StorageManager;
 import com.proxyblob.cli.commands.CreateCommand;
 import com.proxyblob.cli.commands.DeleteCommand;
 import com.proxyblob.cli.commands.ListCommand;
 import com.proxyblob.cli.commands.SelectCommand;
 import com.proxyblob.cli.commands.StartCommand;
 import com.proxyblob.cli.commands.StopCommand;
+import com.proxyblob.config.Config;
 import com.proxyblob.context.AppContext;
+import com.proxyblob.state.AppState;
+import com.proxyblob.storage.StorageManager;
 import picocli.CommandLine;
 
-import static com.proxyblob.constants.Constants.Banner;
+import static com.proxyblob.util.Constants.Banner;
 
 public class CliInitializer {
 

@@ -1,11 +1,11 @@
 package com.proxyblob.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Builder;
+import lombok.Getter;
 
-@Data
-@AllArgsConstructor
-public class ContainerCreationResult {
+@Getter
+@Builder
+public final class ContainerCreationResult {
     private String containerId;
     private String connectionString;
 }

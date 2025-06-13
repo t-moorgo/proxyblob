@@ -34,7 +34,7 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrUnsupportedCommand;
 @UtilityClass
 public class ProxyErrorMapper {
 
-    private static final Map<Byte, String> ERROR_MESSAGES;
+    private final Map<Byte, String> ERROR_MESSAGES;
 
     static {
         Map<Byte, String> map = new HashMap<>();
@@ -67,7 +67,7 @@ public class ProxyErrorMapper {
         ERROR_MESSAGES = Collections.unmodifiableMap(map);
     }
 
-    public static String getMessage(byte errorCode) {
+    public String getMessage(byte errorCode) {
         return ERROR_MESSAGES.getOrDefault(errorCode, "unknown error");
     }
 }

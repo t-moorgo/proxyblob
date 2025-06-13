@@ -1,8 +1,8 @@
 package com.proxyblob.cli.commands;
 
+import com.proxyblob.proxy.server.ProxyServer;
 import com.proxyblob.state.AppState;
 import com.proxyblob.storage.StorageManager;
-import com.proxyblob.proxy.server.ProxyServer;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

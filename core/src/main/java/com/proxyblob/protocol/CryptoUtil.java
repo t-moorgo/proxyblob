@@ -21,33 +21,39 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 @UtilityClass
 public class CryptoUtil {
 
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    private static final int MAC_SIZE_BITS = 128;
+    public final int NONCE_SIZE = 24;
+    public final int KEY_SIZE = 32;
 
-    public static final int NONCE_SIZE = 24;
-    public static final int KEY_SIZE = 32;
+    private final int MAC_SIZE_BITS = 128;
+    private final byte CLAMP_MASK_FIRST_BYTE = (byte) 248;
+    private final byte CLAMP_MASK_LAST_BYTE = (byte) 127;
+    private final byte CLAMP_OR_LAST_BYTE = (byte) 64;
+    private final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    public static KeyPair generateKeyPair() {
+    public KeyPair generateKeyPair() {
         byte[] privateBytes = new byte[KEY_SIZE];
         SECURE_RANDOM.nextBytes(privateBytes);
 
-        privateBytes[0] &= 248;
-        privateBytes[31] &= 127;
-        privateBytes[31] |= 64;
+        privateBytes[0] &= CLAMP_MASK_FIRST_BYTE;
+        privateBytes[31] &= CLAMP_MASK_LAST_BYTE;
+        privateBytes[31] |= CLAMP_OR_LAST_BYTE;
 
         X25519PrivateKeyParameters privateKey = new X25519PrivateKeyParameters(privateBytes, 0);
-
         X25519PublicKeyParameters publicKey = privateKey.generatePublicKey();
-        return new KeyPair(privateKey, publicKey);
+
+        return KeyPair.builder()
+                .privateKey(privateKey)
+                .publicKey(publicKey)
+                .build();
     }
 
-    public static byte[] generateNonce() {
+    public byte[] generateNonce() {
         byte[] nonce = new byte[NONCE_SIZE];
         SECURE_RANDOM.nextBytes(nonce);
         return nonce;
     }
 
-    public static byte[] deriveKey(X25519PrivateKeyParameters privateKey, X25519PublicKeyParameters peerPublicKey, byte[] nonce) {
+    public byte[] deriveKey(X25519PrivateKeyParameters privateKey, X25519PublicKeyParameters peerPublicKey, byte[] nonce) {
         byte[] sharedSecret = new byte[KEY_SIZE];
         privateKey.generateSecret(peerPublicKey, sharedSecret, 0);
 
@@ -60,7 +66,7 @@ public class CryptoUtil {
         return derivedKey;
     }
 
-    public static CryptoResult encrypt(byte[] key, byte[] plaintext) {
+    public CryptoResult encrypt(byte[] key, byte[] plaintext) {
         try {
             byte[] nonce = new byte[NONCE_SIZE];
             SECURE_RANDOM.nextBytes(nonce);
@@ -82,7 +88,7 @@ public class CryptoUtil {
         }
     }
 
-    public static CryptoResult decrypt(byte[] key, byte[] ciphertext) {
+    public CryptoResult decrypt(byte[] key, byte[] ciphertext) {
         if (ciphertext.length < NONCE_SIZE) {
             return error();
         }
@@ -107,19 +113,24 @@ public class CryptoUtil {
         }
     }
 
-    public static byte[] xor(byte[] data, byte[] key) {
-        byte[] result = new byte[data.length];
+    public byte[] xor(byte[] data, byte[] key) {
         for (int i = 0; i < data.length; i++) {
-            result[i] = (byte) (data[i] ^ key[i % key.length]);
+            data[i] ^= key[i % key.length];
         }
-        return result;
+        return data;
     }
 
-    private static CryptoResult error() {
-        return new CryptoResult(null, ErrInvalidCrypto);
+    private CryptoResult error() {
+        return CryptoResult.builder()
+                .data(null)
+                .status(ErrInvalidCrypto)
+                .build();
     }
 
-    private static CryptoResult ok(byte[] data) {
-        return new CryptoResult(data, ErrNone);
+    private CryptoResult ok(byte[] data) {
+        return CryptoResult.builder()
+                .data(data)
+                .status(ErrNone)
+                .build();
     }
 }

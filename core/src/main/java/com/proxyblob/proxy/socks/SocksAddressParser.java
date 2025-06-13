@@ -18,9 +18,13 @@ import static com.proxyblob.proxy.socks.SocksConstants.IPv6;
 @UtilityClass
 public class SocksAddressParser {
 
-    public static ParsedAddress parseAddress(byte[] data) {
+    public ParsedAddress parseAddress(byte[] data) {
         if (data == null || data.length < 2) {
-            return new ParsedAddress(null, 0, ErrInvalidPacket);
+            return ParsedAddress.builder()
+                    .hostAndPort(null)
+                    .consumedBytes(0)
+                    .errorCode(ErrInvalidPacket)
+                    .build();
         }
 
         byte addrType = data[0];
@@ -30,15 +34,22 @@ public class SocksAddressParser {
         if (parsed.getErrorCode() != ErrNone) {
             return parsed;
         }
-
-        return new ParsedAddress(parsed.getHostAndPort(), parsed.getConsumedBytes() + 1, ErrNone);
+        return ParsedAddress.builder()
+                .hostAndPort(parsed.getHostAndPort())
+                .consumedBytes(parsed.getConsumedBytes() + 1)
+                .errorCode(ErrNone)
+                .build();
     }
 
-    public static ParsedAddress extractUDPHeader(byte[] data) {
+    public ParsedAddress extractUDPHeader(byte[] data) {
         int headerLen = 4;
 
         if (data == null || data.length < 5) {
-            return new ParsedAddress(null, 0, ErrInvalidPacket);
+            return ParsedAddress.builder()
+                    .hostAndPort(null)
+                    .consumedBytes(0)
+                    .errorCode(ErrInvalidPacket)
+                    .build();
         }
 
         byte addrType = data[3];
@@ -46,13 +57,20 @@ public class SocksAddressParser {
 
         ParsedAddress parsed = parseNetworkAddress(addrType, addressData);
         if (parsed.getErrorCode() != ErrNone) {
-            return new ParsedAddress(null, 0, parsed.getErrorCode());
+            return ParsedAddress.builder()
+                    .hostAndPort(null)
+                    .consumedBytes(0)
+                    .errorCode(parsed.getErrorCode())
+                    .build();
         }
-
-        return new ParsedAddress(parsed.getHostAndPort(), headerLen + parsed.getConsumedBytes(), ErrNone);
+        return ParsedAddress.builder()
+                .hostAndPort(parsed.getHostAndPort())
+                .consumedBytes(headerLen + parsed.getConsumedBytes())
+                .errorCode(ErrNone)
+                .build();
     }
 
-    private static ParsedAddress parseNetworkAddress(byte addrType, byte[] data) {
+    private ParsedAddress parseNetworkAddress(byte addrType, byte[] data) {
         int cursor = 0;
         String addr;
 
@@ -96,15 +114,21 @@ public class SocksAddressParser {
 
             int port = ByteBuffer.wrap(data, cursor, 2).getShort() & 0xFFFF;
             cursor += 2;
-
-            return new ParsedAddress(addr + ":" + port, cursor, ErrNone);
-
+            return ParsedAddress.builder()
+                    .hostAndPort(addr + ":" + port)
+                    .consumedBytes(cursor)
+                    .errorCode(ErrNone)
+                    .build();
         } catch (UnknownHostException e) {
             return error();
         }
     }
 
-    private static ParsedAddress error() {
-        return new ParsedAddress(null, 0, ErrAddressNotSupported);
+    private ParsedAddress error() {
+        return ParsedAddress.builder()
+                .hostAndPort(null)
+                .consumedBytes(0)
+                .errorCode(ErrAddressNotSupported)
+                .build();
     }
 }

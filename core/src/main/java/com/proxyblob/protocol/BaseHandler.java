@@ -3,6 +3,7 @@ package com.proxyblob.protocol;
 import com.proxyblob.context.AppContext;
 import com.proxyblob.protocol.dto.CryptoResult;
 import com.proxyblob.protocol.dto.KeyPair;
+import com.proxyblob.protocol.dto.Packet;
 import com.proxyblob.proxy.PacketHandler;
 import com.proxyblob.proxy.socks.dto.ReceiveResult;
 import com.proxyblob.transport.Transport;
@@ -26,10 +27,10 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrPacketSendFailed;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrTransportClosed;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrTransportError;
-import static com.proxyblob.protocol.Packet.CmdAck;
-import static com.proxyblob.protocol.Packet.CmdClose;
-import static com.proxyblob.protocol.Packet.CmdData;
-import static com.proxyblob.protocol.Packet.CmdNew;
+import static com.proxyblob.protocol.PacketUtil.CmdAck;
+import static com.proxyblob.protocol.PacketUtil.CmdClose;
+import static com.proxyblob.protocol.PacketUtil.CmdData;
+import static com.proxyblob.protocol.PacketUtil.CmdNew;
 
 @Setter
 @Getter
@@ -91,7 +92,7 @@ public class BaseHandler {
                 continue;
             }
 
-            Packet packet = Packet.decode(data);
+            Packet packet = PacketUtil.decode(data);
             if (packet == null) {
                 continue;
             }
@@ -192,7 +193,6 @@ public class BaseHandler {
         return sendPacket(CmdData, connectionId, result.getData());
     }
 
-
     public byte sendClose(UUID connectionId, byte errorCode) {
         Connection conn = connections.get(connectionId);
         if (conn == null) {
@@ -208,12 +208,7 @@ public class BaseHandler {
             return ErrHandlerStopped;
         }
 
-        Packet packet = new Packet(cmd, connectionId, data);
-        if (packet == null) {
-            return ErrInvalidPacket;
-        }
-
-        byte[] encoded = packet.encode();
+        byte[] encoded = PacketUtil.encode(cmd, connectionId, data);
         if (encoded == null) {
             return ErrInvalidPacket;
         }

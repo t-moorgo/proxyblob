@@ -1,20 +1,22 @@
-package com.proxyblob;
+package com.proxyblob.util;
 
 import com.azure.core.util.Context;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobContainerClientBuilder;
+import com.azure.storage.blob.models.BlobErrorCode;
 import com.azure.storage.blob.models.BlobHttpHeaders;
 import com.azure.storage.blob.models.BlobStorageException;
 import com.azure.storage.blob.options.BlockBlobSimpleUploadOptions;
 import com.azure.storage.blob.specialized.BlockBlobClient;
 import com.proxyblob.context.AppContext;
+import com.proxyblob.dto.Agent;
 import com.proxyblob.dto.AgentCreationResult;
 import com.proxyblob.dto.ParseResult;
 import com.proxyblob.protocol.CryptoUtil;
 import com.proxyblob.proxy.socks.SocksHandler;
 import com.proxyblob.transport.BlobTransport;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.experimental.UtilityClass;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.ByteArrayInputStream;
 import java.net.InetAddress;
@@ -25,28 +27,27 @@ import java.util.Base64;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import static com.proxyblob.constants.Constants.ErrConnectionStringError;
-import static com.proxyblob.constants.Constants.ErrContainerNotFound;
-import static com.proxyblob.constants.Constants.ErrContextCanceled;
-import static com.proxyblob.constants.Constants.ErrInfoBlobError;
-import static com.proxyblob.constants.Constants.ErrNoConnectionString;
-import static com.proxyblob.constants.Constants.InfoBlobName;
-import static com.proxyblob.constants.Constants.InfoKey;
-import static com.proxyblob.constants.Constants.RequestBlobName;
-import static com.proxyblob.constants.Constants.ResponseBlobName;
-import static com.proxyblob.constants.Constants.Success;
+import static com.proxyblob.util.Constants.ErrConnectionStringError;
+import static com.proxyblob.util.Constants.ErrContainerNotFound;
+import static com.proxyblob.util.Constants.ErrContextCanceled;
+import static com.proxyblob.util.Constants.ErrInfoBlobError;
+import static com.proxyblob.util.Constants.ErrNoConnectionString;
+import static com.proxyblob.util.Constants.InfoBlobName;
+import static com.proxyblob.util.Constants.InfoKey;
+import static com.proxyblob.util.Constants.RequestBlobName;
+import static com.proxyblob.util.Constants.ResponseBlobName;
+import static com.proxyblob.util.Constants.Success;
 
-@Getter
-@RequiredArgsConstructor
-public class Agent {
-
-    private final BlobContainerClient containerClient;
-    private final SocksHandler handler;
+@UtilityClass
+public class AgentUtil {
 
     public AgentCreationResult create(AppContext context, String connString) {
         ParseResult parsed = parseConnectionString(connString);
         if (parsed.getErrorCode() != Success) {
-            return new AgentCreationResult(null, parsed.getErrorCode());
+            return AgentCreationResult.builder()
+                    .agent(null)
+                    .status(parsed.getErrorCode())
+                    .build();
         }
 
         try {
@@ -62,23 +63,33 @@ public class Agent {
             BlobTransport transport = new BlobTransport(requestBlob, responseBlob, context);
             SocksHandler handler = new SocksHandler(transport, context);
 
-            Agent agent = new Agent(containerClient, handler);
-            return new AgentCreationResult(agent, Success);
+            Agent agent = Agent.builder()
+                    .containerClient(containerClient)
+                    .handler(handler)
+                    .build();
+
+            return AgentCreationResult.builder()
+                    .agent(agent)
+                    .status(Success)
+                    .build();
         } catch (Exception e) {
-            return new AgentCreationResult(null, ErrConnectionStringError);
+            return AgentCreationResult.builder()
+                    .agent(null)
+                    .status(ErrConnectionStringError)
+                    .build();
         }
     }
 
-    public int start(AppContext context) {
-        int result = writeInfoBlob();
+    public int start(AppContext context, Agent agent) {
+        int result = writeInfoBlob(agent);
         if (result != Success) {
-            stop();
+            stop(agent);
             return ErrContainerNotFound;
         }
 
-        context.getGeneralExecutor().submit(() -> healthCheck(context));
+        context.getGeneralExecutor().submit(() -> healthCheck(context, agent));
 
-        handler.start("");
+        agent.getHandler().start(StringUtils.EMPTY);
 
         while (!context.isStopped()) {
             try {
@@ -92,11 +103,11 @@ public class Agent {
         return Success;
     }
 
-    private void stop() {
-        handler.stop();
+    private void stop(Agent agent) {
+        agent.getHandler().stop();
     }
 
-    private void healthCheck(AppContext context) {
+    private void healthCheck(AppContext context, Agent agent) {
         ScheduledExecutorService scheduler = context.getScheduler();
         Runnable task = () -> {
             if (context.isStopped()) {
@@ -107,7 +118,7 @@ public class Agent {
             }
 
             try {
-                BlockBlobClient blob = containerClient
+                BlockBlobClient blob = agent.getContainerClient()
                         .getBlobClient(InfoBlobName)
                         .getBlockBlobClient();
 
@@ -115,8 +126,9 @@ public class Agent {
 
             } catch (BlobStorageException e) {
                 String code = e.getErrorCode().toString();
-                if ("ContainerNotFound".equals(code) || "ContainerBeingDeleted".equals(code)) {
-                    stop();
+                if (BlobErrorCode.CONTAINER_NOT_FOUND.toString().equals(code)
+                        || BlobErrorCode.CONTAINER_BEING_DELETED.toString().equals(code)) {
+                    stop(agent);
                 }
             } catch (Exception e) {
                 //TODO что то прописать
@@ -126,12 +138,12 @@ public class Agent {
         scheduler.scheduleAtFixedRate(task, 0, 30, TimeUnit.SECONDS);
     }
 
-    private int writeInfoBlob() {
+    private int writeInfoBlob(Agent agent) {
         try {
             String info = getCurrentInfo();
             byte[] encrypted = CryptoUtil.xor(info.getBytes(StandardCharsets.UTF_8), InfoKey);
 
-            BlockBlobClient blob = containerClient.getBlobClient(InfoBlobName).getBlockBlobClient();
+            BlockBlobClient blob = agent.getContainerClient().getBlobClient(InfoBlobName).getBlockBlobClient();
 
             BlockBlobSimpleUploadOptions options = new BlockBlobSimpleUploadOptions(
                     new ByteArrayInputStream(encrypted), encrypted.length)
@@ -141,8 +153,9 @@ public class Agent {
             return Success;
 
         } catch (BlobStorageException e) {
-            if ("ContainerNotFound".equals(e.getErrorCode().toString()) ||
-                    "ContainerBeingDeleted".equals(e.getErrorCode().toString())) {
+            String code = e.getErrorCode().toString();
+            if (BlobErrorCode.CONTAINER_NOT_FOUND.toString().equals(code)
+                    || BlobErrorCode.CONTAINER_BEING_DELETED.toString().equals(code)) {
                 return ErrContainerNotFound;
             }
             return ErrInfoBlobError;
@@ -154,7 +167,12 @@ public class Agent {
 
     private ParseResult parseConnectionString(String connString) {
         if (connString == null || connString.isEmpty()) {
-            return new ParseResult(null, null, null, ErrNoConnectionString);
+            return ParseResult.builder()
+                    .storageUrl(null)
+                    .containerId(null)
+                    .sasToken(null)
+                    .errorCode(ErrNoConnectionString)
+                    .build();
         }
 
         try {
@@ -174,14 +192,24 @@ public class Agent {
             }
 
             String storageUrl = url.getProtocol() + "://" + url.getHost();
-            return new ParseResult(storageUrl, containerId, query, Success);
+            return ParseResult.builder()
+                    .storageUrl(storageUrl)
+                    .containerId(containerId)
+                    .sasToken(query)
+                    .errorCode(Success)
+                    .build();
         } catch (Exception e) {
             return error();
         }
     }
 
     private ParseResult error() {
-        return new ParseResult(null, null, null, ErrConnectionStringError);
+        return ParseResult.builder()
+                .storageUrl(null)
+                .containerId(null)
+                .sasToken(null)
+                .errorCode(ErrConnectionStringError)
+                .build();
     }
 
     private String getCurrentInfo() {

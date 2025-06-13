@@ -126,7 +126,11 @@ public class SocksUDPHandler {
                     byte[] data = Arrays.copyOf(packet.getData(), packet.getLength());
                     InetSocketAddress addr = new InetSocketAddress(packet.getAddress(), packet.getPort());
 
-                    responses.offer(new ResponsePacket(data, addr));
+                    ResponsePacket response = ResponsePacket.builder()
+                            .data(data)
+                            .addr(addr)
+                            .build();
+                    responses.offer(response);
 
                 } catch (IOException e) {
                     if (targetConn.isClosed()) return;
@@ -151,7 +155,12 @@ public class SocksUDPHandler {
                         if (target.getAddr().getAddress().equals(resp.getAddr().getAddress())
                                 && target.getAddr().getPort() == resp.getAddr().getPort()) {
                             String targetKey = resp.getAddr().getAddress().getHostAddress() + ":" + resp.getAddr().getPort();
-                            targets.put(targetKey, new TargetInfo(resp.getAddr(), Instant.now()));
+
+                            TargetInfo targetInfo = TargetInfo.builder()
+                                    .addr(resp.getAddr())
+                                    .lastActive(Instant.now())
+                                    .build();
+                            targets.put(targetKey, targetInfo);
                             found = true;
                             break;
                         }
@@ -222,7 +231,12 @@ public class SocksUDPHandler {
                     }
 
                     String targetKey = targetUDPAddr.getAddress().getHostAddress() + ":" + targetUDPAddr.getPort();
-                    targets.put(targetKey, new TargetInfo(targetUDPAddr, Instant.now()));
+
+                    TargetInfo targetInfo = TargetInfo.builder()
+                            .addr(targetUDPAddr)
+                            .lastActive(Instant.now())
+                            .build();
+                    targets.put(targetKey, targetInfo);
 
                     byte[] payload = Arrays.copyOfRange(received, headerLen, received.length);
                     DatagramPacket targetPacket = new DatagramPacket(payload, payload.length, targetUDPAddr);

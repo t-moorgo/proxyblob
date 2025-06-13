@@ -1,12 +1,11 @@
 package com.proxyblob.dto;
 
-import com.proxyblob.Agent;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Builder;
+import lombok.Getter;
 
-@Data
-@AllArgsConstructor
-public class AgentCreationResult {
+@Getter
+@Builder
+public final class AgentCreationResult {
     private Agent agent;
     private int status;
 }

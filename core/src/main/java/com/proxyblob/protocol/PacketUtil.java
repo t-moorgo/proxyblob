@@ -1,34 +1,25 @@
 package com.proxyblob.protocol;
 
-import lombok.Getter;
+import com.proxyblob.protocol.dto.Packet;
+import lombok.experimental.UtilityClass;
 
 import java.nio.ByteBuffer;
 import java.util.UUID;
 
-@Getter
-public class Packet {
+@UtilityClass
+public class PacketUtil {
 
-    public static final byte CmdNew = 1;
-    public static final byte CmdAck = 2;
-    public static final byte CmdData = 3;
-    public static final byte CmdClose = 4;
+    public final byte CmdNew = 1;
+    public final byte CmdAck = 2;
+    public final byte CmdData = 3;
+    public final byte CmdClose = 4;
 
-    public static final int CommandSize = 1;
-    public static final int UUIDSize = 16;
-    public static final int DataLengthSize = 4;
-    public static final int HeaderSize = CommandSize + UUIDSize + DataLengthSize;
+    public final int CommandSize = 1;
+    public final int UUIDSize = 16;
+    public final int DataLengthSize = 4;
+    public final int HeaderSize = CommandSize + UUIDSize + DataLengthSize;
 
-    private final byte command;
-    private final UUID connectionId;
-    private final byte[] data;
-
-    public Packet(byte command, UUID connectionId, byte[] data) {
-        this.command = command;
-        this.connectionId = connectionId;
-        this.data = data != null ? data : new byte[0];
-    }
-
-    public byte[] encode() {
+    public byte[] encode(byte command, UUID connectionId, byte[] data) {
         ByteBuffer buffer = ByteBuffer.allocate(HeaderSize + data.length);
         buffer.put(command);
         buffer.putLong(connectionId.getMostSignificantBits());
@@ -40,7 +31,7 @@ public class Packet {
         return buffer.array();
     }
 
-    public static Packet decode(byte[] bytes) {
+    public Packet decode(byte[] bytes) {
         if (bytes == null || bytes.length < HeaderSize) {
             return null;
         }
@@ -63,6 +54,10 @@ public class Packet {
         byte[] data = new byte[length];
         buffer.get(data);
 
-        return new Packet(command, uuid, data);
+        return Packet.builder()
+                .command(command)
+                .connectionId(uuid)
+                .data(data)
+                .build();
     }
 }

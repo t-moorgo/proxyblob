@@ -53,17 +53,21 @@ public class CryptoUtil {
         return nonce;
     }
 
-    public byte[] deriveKey(X25519PrivateKeyParameters privateKey, X25519PublicKeyParameters peerPublicKey, byte[] nonce) {
-        byte[] sharedSecret = new byte[KEY_SIZE];
-        privateKey.generateSecret(peerPublicKey, sharedSecret, 0);
+    public CryptoResult deriveKey(X25519PrivateKeyParameters privateKey, X25519PublicKeyParameters peerPublicKey, byte[] nonce) {
+        try {
+            byte[] sharedSecret = new byte[KEY_SIZE];
+            privateKey.generateSecret(peerPublicKey, sharedSecret, 0);
 
-        HKDFBytesGenerator hkdf = new HKDFBytesGenerator(new SHA3Digest(256));
-        hkdf.init(new HKDFParameters(sharedSecret, nonce, null));
+            HKDFBytesGenerator hkdf = new HKDFBytesGenerator(new SHA3Digest(256));
+            hkdf.init(new HKDFParameters(sharedSecret, nonce, null));
 
-        byte[] derivedKey = new byte[KEY_SIZE];
-        hkdf.generateBytes(derivedKey, 0, KEY_SIZE);
+            byte[] derivedKey = new byte[KEY_SIZE];
+            hkdf.generateBytes(derivedKey, 0, KEY_SIZE);
 
-        return derivedKey;
+            return ok(derivedKey);
+        } catch (Exception e) {
+            return error();
+        }
     }
 
     public CryptoResult encrypt(byte[] key, byte[] plaintext) {

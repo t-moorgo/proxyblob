@@ -8,6 +8,7 @@ import com.proxyblob.proxy.PacketHandler;
 import com.proxyblob.proxy.socks.dto.ReceiveResult;
 import com.proxyblob.transport.Transport;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.bouncycastle.crypto.params.X25519PrivateKeyParameters;
 import org.bouncycastle.crypto.params.X25519PublicKeyParameters;
@@ -21,7 +22,6 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionClosed;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionNotFound;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrHandlerStopped;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidCommand;
-import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidCrypto;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidPacket;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrPacketSendFailed;
@@ -34,27 +34,14 @@ import static com.proxyblob.protocol.PacketUtil.CmdNew;
 
 @Setter
 @Getter
+@RequiredArgsConstructor
 public class BaseHandler {
 
     private final Transport transport;
+    private final PacketHandler packetHandler;
     private final AppContext context;
-    private PacketHandler packetHandler;
 
     private final ConcurrentMap<UUID, Connection> connections = new ConcurrentHashMap<>();
-
-    public BaseHandler(Transport transport, PacketHandler packetHandler, AppContext context) {
-        this.transport = transport;
-        this.packetHandler = packetHandler;
-        this.context = context;
-    }
-
-    public void start() {
-        context.getReceiverExecutor().submit(this::receiveLoop);
-    }
-
-    public void stop() {
-        context.stop();
-    }
 
     public void receiveLoop() {
         int consecutiveErrors = 0;
@@ -168,13 +155,13 @@ public class BaseHandler {
         System.arraycopy(serverData, CryptoUtil.NONCE_SIZE, serverPublicKeyBytes, 0, CryptoUtil.KEY_SIZE);
 
         X25519PublicKeyParameters serverPublicKey = new X25519PublicKeyParameters(serverPublicKeyBytes, 0);
-        byte[] symmetricKey = CryptoUtil.deriveKey(privateKey, serverPublicKey, nonce);
+        CryptoResult result = CryptoUtil.deriveKey(privateKey, serverPublicKey, nonce);
 
-        if (symmetricKey == null || symmetricKey.length != CryptoUtil.KEY_SIZE) {
-            return ErrInvalidCrypto;
+        if (result.getData() == null || result.getData().length != CryptoUtil.KEY_SIZE) {
+            return result.getStatus();
         }
 
-        conn.setSecretKey(symmetricKey);
+        conn.setSecretKey(result.getData());
 
         return sendPacket(CmdAck, connectionId, publicKeyBytes);
     }
@@ -187,7 +174,7 @@ public class BaseHandler {
 
         CryptoResult result = CryptoUtil.encrypt(conn.getSecretKey(), data);
         if (result.getStatus() != ErrNone) {
-            return ErrInvalidCrypto;
+            return result.getStatus();
         }
 
         return sendPacket(CmdData, connectionId, result.getData());
@@ -233,5 +220,4 @@ public class BaseHandler {
             }
         }
     }
-
 }

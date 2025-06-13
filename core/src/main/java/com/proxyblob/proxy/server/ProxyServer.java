@@ -13,7 +13,6 @@ import org.bouncycastle.crypto.params.X25519PublicKeyParameters;
 
 import java.io.EOFException;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -29,7 +28,6 @@ import java.util.concurrent.TimeUnit;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionClosed;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrConnectionNotFound;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrHandlerStopped;
-import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidCrypto;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidPacket;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidState;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrNetworkUnreachable;
@@ -73,7 +71,7 @@ public class ProxyServer implements PacketHandler {
     @Override
     public void stop() {
         baseHandler.closeAllConnections();
-        baseHandler.stop();
+        context.stop();
         if (listener != null && !listener.isClosed()) {
             try {
                 listener.close();
@@ -104,14 +102,20 @@ public class ProxyServer implements PacketHandler {
             return ErrInvalidState;
         }
 
-        if (data == null || data.length < 32) {
+        if (data == null) {
+            return ErrInvalidPacket;
+        }
+        if (data.length < 32) {
             return ErrInvalidPacket;
         }
 
         byte[] clientPublicKey = Arrays.copyOfRange(data, 0, 32);
 
         byte[] serverData = conn.getSecretKey();
-        if (serverData == null || serverData.length < 24 + 32) {
+        if (serverData == null) {
+            return ErrInvalidPacket;
+        }
+        if (serverData.length != 56) {
             return ErrInvalidPacket;
         }
 
@@ -120,20 +124,18 @@ public class ProxyServer implements PacketHandler {
 
         X25519PrivateKeyParameters privateKey = new X25519PrivateKeyParameters(serverPrivateKey, 0);
         X25519PublicKeyParameters publicKey = new X25519PublicKeyParameters(clientPublicKey, 0);
-        byte[] sharedKey = CryptoUtil.deriveKey(privateKey, publicKey, nonce);
-        if (sharedKey == null || sharedKey.length != CryptoUtil.KEY_SIZE) {
-            return ErrInvalidCrypto;
+        CryptoResult result = CryptoUtil.deriveKey(privateKey, publicKey, nonce);
+        if (result.getData() == null || result.getData().length != CryptoUtil.KEY_SIZE) {
+            return result.getStatus();
         }
 
-        conn.setSecretKey(sharedKey);
-
+        conn.setSecretKey(result.getData());
         conn.getReadBuffer().offer(new byte[0]);
         conn.setState(StateConnected);
         conn.setLastActivity(Instant.now());
 
         return ErrNone;
     }
-
 
     @Override
     public byte onData(UUID connectionId, byte[] data) {
@@ -146,7 +148,7 @@ public class ProxyServer implements PacketHandler {
 
         CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), data);
         if (result.getStatus() != ErrNone) {
-            return ErrInvalidCrypto;
+            return result.getStatus();
         }
 
         try {
@@ -161,7 +163,6 @@ public class ProxyServer implements PacketHandler {
         }
     }
 
-
     @Override
     public byte onClose(UUID connectionId, byte errorCode) {
         Connection conn = baseHandler.getConnections().get(connectionId);
@@ -174,23 +175,17 @@ public class ProxyServer implements PacketHandler {
         return errorCode;
     }
 
-    public void acceptLoop() {
+    private void acceptLoop() {
         while (!context.isStopped()) {
             try {
                 Socket clientSocket = listener.accept();
-
-                if (context.isStopped()) {
-                    clientSocket.close();
-                    return;
-                }
-
                 context.getGeneralExecutor().submit(() -> handleConnection(clientSocket)); // аналог `go`
             } catch (IOException e) {
                 if (context.isStopped()) {
                     return;
                 }
 
-                if (e instanceof SocketException) {
+                if (e instanceof SocketTimeoutException || e instanceof SocketException) {
                     continue;
                 }
 
@@ -211,12 +206,9 @@ public class ProxyServer implements PacketHandler {
                 return;
             }
 
-            boolean ackReceived = false;
+            byte[] ack;
             try {
-                byte[] ack = proxyConn.getReadBuffer().poll(5, TimeUnit.SECONDS);
-                if (ack != null) {
-                    ackReceived = true;
-                }
+                ack = proxyConn.getReadBuffer().poll(5, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 baseHandler.sendClose(connId, ErrHandlerStopped);
@@ -224,8 +216,12 @@ public class ProxyServer implements PacketHandler {
                 return;
             }
 
-            if (!ackReceived) {
-                baseHandler.sendClose(connId, ErrTransportTimeout);
+            if (ack == null) {
+                if (context.isStopped()) {
+                    baseHandler.sendClose(connId, ErrHandlerStopped);
+                } else {
+                    baseHandler.sendClose(connId, ErrTransportTimeout);
+                }
                 baseHandler.getConnections().remove(connId);
                 return;
             }
@@ -304,39 +300,32 @@ public class ProxyServer implements PacketHandler {
     }
 
     private void forwardToClient(Socket clientSocket, Connection proxyConn, BlockingQueue<Byte> errQueue) {
-        try {
-            OutputStream outputStream = clientSocket.getOutputStream();
+        while (true) {
+            if (proxyConn.getClosed().get() || context.isStopped()) return;
 
-            while (true) {
-                if (proxyConn.getClosed().get() || context.isStopped()) return;
-
-                byte[] data;
-                try {
-                    data = proxyConn.getReadBuffer().take();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-
-                proxyConn.setLastActivity(Instant.now());
-
-                try {
-                    clientSocket.getOutputStream().write(data);
-                } catch (IOException e) {
-                    errQueue.offer(mapIOException(e));
-                    return;
-                }
+            byte[] data;
+            try {
+                data = proxyConn.getReadBuffer().take();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
             }
 
-        } catch (IOException e) {
-            errQueue.offer(ErrConnectionClosed);
+            proxyConn.setLastActivity(Instant.now());
+
+            try {
+                clientSocket.getOutputStream().write(data);
+            } catch (IOException e) {
+                errQueue.offer(mapIOException(e));
+                return;
+            }
         }
     }
 
     private byte mapIOException(IOException e) {
         if (e instanceof SocketTimeoutException) {
             return ErrTransportTimeout;
-        } else if ("Connection reset".equals(e.getMessage()) || e instanceof EOFException) {
+        } else if (e instanceof EOFException || e instanceof SocketException) {
             return ErrConnectionClosed;
         } else {
             return ErrNetworkUnreachable;

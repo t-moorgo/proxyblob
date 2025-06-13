@@ -2,8 +2,6 @@ package com.proxyblob.proxy.server;
 
 import lombok.experimental.UtilityClass;
 
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 
 import static com.proxyblob.errorcodes.ErrorCodes.ErrAddressNotSupported;
@@ -34,38 +32,32 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrUnsupportedCommand;
 @UtilityClass
 public class ProxyErrorMapper {
 
-    private final Map<Byte, String> ERROR_MESSAGES;
-
-    static {
-        Map<Byte, String> map = new HashMap<>();
-
-        map.put(ErrNone, "no error");
-        map.put(ErrInvalidCommand, "invalid command");
-        map.put(ErrContextCanceled, "context canceled");
-        map.put(ErrConnectionClosed, "connection closed");
-        map.put(ErrConnectionNotFound, "connection not found");
-        map.put(ErrConnectionExists, "connection already exists");
-        map.put(ErrInvalidState, "invalid connection state");
-        map.put(ErrPacketSendFailed, "failed to send packet");
-        map.put(ErrHandlerStopped, "handler stopped");
-        map.put(ErrUnexpectedPacket, "unexpected packet received");
-        map.put(ErrTransportClosed, "transport closed");
-        map.put(ErrTransportTimeout, "transport timeout");
-        map.put(ErrTransportError, "general transport error");
-        map.put(ErrInvalidSocksVersion, "invalid SOCKS version");
-        map.put(ErrUnsupportedCommand, "unsupported command");
-        map.put(ErrHostUnreachable, "host unreachable");
-        map.put(ErrConnectionRefused, "connection refused");
-        map.put(ErrNetworkUnreachable, "network unreachable");
-        map.put(ErrAddressNotSupported, "address type not supported");
-        map.put(ErrTTLExpired, "TTL expired");
-        map.put(ErrGeneralSocksFailure, "general SOCKS server failure");
-        map.put(ErrAuthFailed, "authentication failed");
-        map.put(ErrInvalidPacket, "invalid protocol packet structure");
-        map.put(ErrInvalidCrypto, "invalid cryptographic operation");
-
-        ERROR_MESSAGES = Collections.unmodifiableMap(map);
-    }
+    private final Map<Byte, String> ERROR_MESSAGES = Map.ofEntries(
+            Map.entry(ErrNone, "no error"),
+            Map.entry(ErrInvalidCommand, "invalid command"),
+            Map.entry(ErrContextCanceled, "context canceled"),
+            Map.entry(ErrConnectionClosed, "connection closed"),
+            Map.entry(ErrConnectionNotFound, "connection not found"),
+            Map.entry(ErrConnectionExists, "connection already exists"),
+            Map.entry(ErrInvalidState, "invalid connection state"),
+            Map.entry(ErrPacketSendFailed, "failed to send packet"),
+            Map.entry(ErrHandlerStopped, "handler stopped"),
+            Map.entry(ErrUnexpectedPacket, "unexpected packet received"),
+            Map.entry(ErrTransportClosed, "transport closed"),
+            Map.entry(ErrTransportTimeout, "transport timeout"),
+            Map.entry(ErrTransportError, "general transport error"),
+            Map.entry(ErrInvalidSocksVersion, "invalid SOCKS version"),
+            Map.entry(ErrUnsupportedCommand, "unsupported command"),
+            Map.entry(ErrHostUnreachable, "host unreachable"),
+            Map.entry(ErrConnectionRefused, "connection refused"),
+            Map.entry(ErrNetworkUnreachable, "network unreachable"),
+            Map.entry(ErrAddressNotSupported, "address type not supported"),
+            Map.entry(ErrTTLExpired, "TTL expired"),
+            Map.entry(ErrGeneralSocksFailure, "general SOCKS server failure"),
+            Map.entry(ErrAuthFailed, "authentication failed"),
+            Map.entry(ErrInvalidPacket, "invalid protocol packet structure"),
+            Map.entry(ErrInvalidCrypto, "invalid cryptographic operation")
+    );
 
     public String getMessage(byte errorCode) {
         return ERROR_MESSAGES.getOrDefault(errorCode, "unknown error");

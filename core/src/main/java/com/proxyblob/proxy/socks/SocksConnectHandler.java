@@ -210,5 +210,4 @@ public class SocksConnectHandler {
             return ErrHandlerStopped;
         }
     }
-
 }

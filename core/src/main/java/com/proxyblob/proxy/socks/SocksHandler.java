@@ -60,11 +60,6 @@ public class SocksHandler implements PacketHandler {
     }
 
     @Override
-    public byte onAck(UUID connectionId, byte[] data) {
-        return ErrUnexpectedPacket;
-    }
-
-    @Override
     public byte onNew(UUID connectionId, byte[] data) {
         if (baseHandler.getConnections().containsKey(connectionId)) {
             return ErrConnectionExists;
@@ -87,6 +82,11 @@ public class SocksHandler implements PacketHandler {
 
         context.getGeneralExecutor().submit(() -> processConnection(conn));
         return ErrNone;
+    }
+
+    @Override
+    public byte onAck(UUID connectionId, byte[] data) {
+        return ErrUnexpectedPacket;
     }
 
     @Override
@@ -127,7 +127,6 @@ public class SocksHandler implements PacketHandler {
 
         return ErrNone;
     }
-
 
     private void processConnection(Connection conn) {
         byte errCode;

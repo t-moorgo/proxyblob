@@ -22,9 +22,11 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import static com.proxyblob.errorcodes.ErrorCodes.ErrGeneralSocksFailure;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrNetworkUnreachable;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrPacketSendFailed;
+import static com.proxyblob.errorcodes.ErrorCodes.ErrTransportClosed;
 import static com.proxyblob.protocol.Connection.StateConnected;
 import static com.proxyblob.proxy.socks.SocksConstants.IPv4;
 import static com.proxyblob.proxy.socks.SocksConstants.Succeeded;
@@ -40,7 +42,15 @@ public class SocksUDPHandler {
         try {
             udpSocket = new DatagramSocket(new InetSocketAddress("0.0.0.0", 0));
         } catch (SocketException e) {
-            byte errCode = ErrNetworkUnreachable;
+            byte errCode = ErrGeneralSocksFailure;
+            if (e.getMessage() != null) {
+                String msg = e.getMessage().toLowerCase();
+                if (msg.contains("socket closed")) {
+                    errCode = ErrTransportClosed;
+                } else if (msg.contains("bind failed") || msg.contains("listen")) {
+                    errCode = ErrNetworkUnreachable;
+                }
+            }
             SocksErrorUtil.sendError(baseHandler, conn, errCode);
             return errCode;
         }

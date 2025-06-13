@@ -41,7 +41,7 @@ import static com.proxyblob.util.Constants.Success;
 @UtilityClass
 public class AgentUtil {
 
-    public AgentCreationResult create(AppContext context, String connString) {
+    public AgentCreationResult createAgent(AppContext context, String connString) {
         ParseResult parsed = parseConnectionString(connString);
         if (parsed.getErrorCode() != Success) {
             return AgentCreationResult.builder()
@@ -81,7 +81,7 @@ public class AgentUtil {
     }
 
     public int start(AppContext context, Agent agent) {
-        int result = writeInfoBlob(agent);
+        int result = writeInfoBlob(agent, context);
         if (result != Success) {
             stop(agent);
             return ErrContainerNotFound;
@@ -138,7 +138,7 @@ public class AgentUtil {
         scheduler.scheduleAtFixedRate(task, 0, 30, TimeUnit.SECONDS);
     }
 
-    private int writeInfoBlob(Agent agent) {
+    private int writeInfoBlob(Agent agent, AppContext context) {
         try {
             String info = getCurrentInfo();
             byte[] encrypted = CryptoUtil.xor(info.getBytes(StandardCharsets.UTF_8), InfoKey);
@@ -151,7 +151,6 @@ public class AgentUtil {
 
             blob.uploadWithResponse(options, null, Context.NONE);
             return Success;
-
         } catch (BlobStorageException e) {
             String code = e.getErrorCode().toString();
             if (BlobErrorCode.CONTAINER_NOT_FOUND.toString().equals(code)
@@ -159,8 +158,10 @@ public class AgentUtil {
                 return ErrContainerNotFound;
             }
             return ErrInfoBlobError;
-
         } catch (Exception e) {
+            if (context.isStopped()) {
+                return ErrContextCanceled;
+            }
             return ErrInfoBlobError;
         }
     }

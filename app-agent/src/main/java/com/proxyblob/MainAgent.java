@@ -27,7 +27,7 @@ public class MainAgent {
 
         Runtime.getRuntime().addShutdownHook(new Thread(context::stop));
 
-        AgentCreationResult result = AgentUtil.create(context, connString);
+        AgentCreationResult result = AgentUtil.createAgent(context, connString);
 
         if (result.getStatus() != Success) {
             System.exit(result.getStatus());

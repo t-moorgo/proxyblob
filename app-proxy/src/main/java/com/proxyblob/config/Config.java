@@ -1,5 +1,6 @@
 package com.proxyblob.config;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -12,8 +13,13 @@ import java.nio.file.Paths;
 @NoArgsConstructor
 public class Config {
 
+    @JsonProperty("storage_account_name")
     private String storageAccountName;
+
+    @JsonProperty("storage_account_key")
     private String storageAccountKey;
+
+    @JsonProperty("storage_url")
     private String storageURL;
 
     public void validate() {

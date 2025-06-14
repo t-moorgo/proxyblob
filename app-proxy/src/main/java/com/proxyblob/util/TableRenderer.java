@@ -2,17 +2,18 @@ package com.proxyblob.util;
 
 import com.proxyblob.dto.ContainerInfo;
 import de.vandermeer.asciitable.AsciiTable;
-import lombok.experimental.UtilityClass;
 
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-@UtilityClass
 public class TableRenderer {
 
-    private final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter
+            .ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneId.systemDefault());
 
-    public String renderAgentTable(List<ContainerInfo> containers) {
+    public static String renderAgentTable(List<ContainerInfo> containers) {
         AsciiTable table = new AsciiTable();
 
         table.addRule();

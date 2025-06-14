@@ -1,7 +1,6 @@
 package com.proxyblob.proxy.socks;
 
 import com.proxyblob.proxy.socks.dto.ParsedAddress;
-import lombok.experimental.UtilityClass;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -15,10 +14,9 @@ import static com.proxyblob.proxy.socks.SocksConstants.Domain;
 import static com.proxyblob.proxy.socks.SocksConstants.IPv4;
 import static com.proxyblob.proxy.socks.SocksConstants.IPv6;
 
-@UtilityClass
 public class SocksAddressParser {
 
-    public ParsedAddress parseAddress(byte[] data) {
+    public static ParsedAddress parseAddress(byte[] data) {
         if (data == null || data.length < 2) {
             return ParsedAddress.builder()
                     .hostAndPort(null)
@@ -41,7 +39,7 @@ public class SocksAddressParser {
                 .build();
     }
 
-    public ParsedAddress extractUDPHeader(byte[] data) {
+    public static ParsedAddress extractUDPHeader(byte[] data) {
         int headerLen = 4;
 
         if (data == null || data.length < 5) {
@@ -70,7 +68,7 @@ public class SocksAddressParser {
                 .build();
     }
 
-    private ParsedAddress parseNetworkAddress(byte addrType, byte[] data) {
+    private static ParsedAddress parseNetworkAddress(byte addrType, byte[] data) {
         int cursor = 0;
         String addr;
 
@@ -124,7 +122,7 @@ public class SocksAddressParser {
         }
     }
 
-    private ParsedAddress error() {
+    private static ParsedAddress error() {
         return ParsedAddress.builder()
                 .hostAndPort(null)
                 .consumedBytes(0)

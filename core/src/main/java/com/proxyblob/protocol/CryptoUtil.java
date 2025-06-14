@@ -18,19 +18,18 @@ import java.security.SecureRandom;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidCrypto;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 
-@UtilityClass
 public class CryptoUtil {
 
-    public final int NONCE_SIZE = 24;
-    public final int KEY_SIZE = 32;
+    public static final int NONCE_SIZE = 24;
+    public static final int KEY_SIZE = 32;
 
-    private final int MAC_SIZE_BITS = 128;
-    private final byte CLAMP_MASK_FIRST_BYTE = (byte) 248;
-    private final byte CLAMP_MASK_LAST_BYTE = (byte) 127;
-    private final byte CLAMP_OR_LAST_BYTE = (byte) 64;
-    private final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int MAC_SIZE_BITS = 128;
+    private static final byte CLAMP_MASK_FIRST_BYTE = (byte) 248;
+    private static final byte CLAMP_MASK_LAST_BYTE = (byte) 127;
+    private static final byte CLAMP_OR_LAST_BYTE = (byte) 64;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    public KeyPair generateKeyPair() {
+    public static KeyPair generateKeyPair() {
         byte[] privateBytes = new byte[KEY_SIZE];
         SECURE_RANDOM.nextBytes(privateBytes);
 
@@ -47,13 +46,13 @@ public class CryptoUtil {
                 .build();
     }
 
-    public byte[] generateNonce() {
+    public static byte[] generateNonce() {
         byte[] nonce = new byte[NONCE_SIZE];
         SECURE_RANDOM.nextBytes(nonce);
         return nonce;
     }
 
-    public CryptoResult deriveKey(X25519PrivateKeyParameters privateKey, X25519PublicKeyParameters peerPublicKey, byte[] nonce) {
+    public static CryptoResult deriveKey(X25519PrivateKeyParameters privateKey, X25519PublicKeyParameters peerPublicKey, byte[] nonce) {
         try {
             byte[] sharedSecret = new byte[KEY_SIZE];
             privateKey.generateSecret(peerPublicKey, sharedSecret, 0);
@@ -70,7 +69,7 @@ public class CryptoUtil {
         }
     }
 
-    public CryptoResult encrypt(byte[] key, byte[] plaintext) {
+    public static CryptoResult encrypt(byte[] key, byte[] plaintext) {
         try {
             byte[] nonce = new byte[NONCE_SIZE];
             SECURE_RANDOM.nextBytes(nonce);
@@ -92,7 +91,7 @@ public class CryptoUtil {
         }
     }
 
-    public CryptoResult decrypt(byte[] key, byte[] ciphertext) {
+    public static CryptoResult decrypt(byte[] key, byte[] ciphertext) {
         if (ciphertext.length < NONCE_SIZE) {
             return error();
         }
@@ -117,21 +116,21 @@ public class CryptoUtil {
         }
     }
 
-    public byte[] xor(byte[] data, byte[] key) {
+    public static byte[] xor(byte[] data, byte[] key) {
         for (int i = 0; i < data.length; i++) {
             data[i] ^= key[i % key.length];
         }
         return data;
     }
 
-    private CryptoResult error() {
+    private static CryptoResult error() {
         return CryptoResult.builder()
                 .data(null)
                 .status(ErrInvalidCrypto)
                 .build();
     }
 
-    private CryptoResult ok(byte[] data) {
+    private static CryptoResult ok(byte[] data) {
         return CryptoResult.builder()
                 .data(data)
                 .status(ErrNone)

@@ -1,25 +1,23 @@
 package com.proxyblob.protocol;
 
 import com.proxyblob.protocol.dto.Packet;
-import lombok.experimental.UtilityClass;
 
 import java.nio.ByteBuffer;
 import java.util.UUID;
 
-@UtilityClass
 public class PacketUtil {
 
-    public final byte CmdNew = 1;
-    public final byte CmdAck = 2;
-    public final byte CmdData = 3;
-    public final byte CmdClose = 4;
+    public static final byte CmdNew = 1;
+    public static final byte CmdAck = 2;
+    public static final byte CmdData = 3;
+    public static final byte CmdClose = 4;
 
-    public final int CommandSize = 1;
-    public final int UUIDSize = 16;
-    public final int DataLengthSize = 4;
-    public final int HeaderSize = CommandSize + UUIDSize + DataLengthSize;
+    public static final int CommandSize = 1;
+    public static final int UUIDSize = 16;
+    public static final int DataLengthSize = 4;
+    public static final int HeaderSize = CommandSize + UUIDSize + DataLengthSize;
 
-    public byte[] encode(byte command, UUID connectionId, byte[] data) {
+    public static byte[] encode(byte command, UUID connectionId, byte[] data) {
         ByteBuffer buffer = ByteBuffer.allocate(HeaderSize + data.length);
         buffer.put(command);
         buffer.putLong(connectionId.getMostSignificantBits());
@@ -31,7 +29,7 @@ public class PacketUtil {
         return buffer.array();
     }
 
-    public Packet decode(byte[] bytes) {
+    public static Packet decode(byte[] bytes) {
         if (bytes == null || bytes.length < HeaderSize) {
             return null;
         }

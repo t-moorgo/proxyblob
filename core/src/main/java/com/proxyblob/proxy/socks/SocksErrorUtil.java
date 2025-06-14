@@ -2,7 +2,6 @@ package com.proxyblob.proxy.socks;
 
 import com.proxyblob.protocol.BaseHandler;
 import com.proxyblob.protocol.Connection;
-import lombok.experimental.UtilityClass;
 
 import static com.proxyblob.errorcodes.ErrorCodes.ErrAddressNotSupported;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrAuthFailed;
@@ -24,10 +23,9 @@ import static com.proxyblob.proxy.socks.SocksConstants.Succeeded;
 import static com.proxyblob.proxy.socks.SocksConstants.TTLExpired;
 import static com.proxyblob.proxy.socks.SocksConstants.Version5;
 
-@UtilityClass
 public class SocksErrorUtil {
 
-    public void sendError(BaseHandler baseHandler, Connection conn, byte errCode) {
+    public static void sendError(BaseHandler baseHandler, Connection conn, byte errCode) {
         byte socksReplyCode = GeneralFailure;
 
         switch (errCode) {

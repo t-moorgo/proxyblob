@@ -38,10 +38,9 @@ import static com.proxyblob.util.Constants.RequestBlobName;
 import static com.proxyblob.util.Constants.ResponseBlobName;
 import static com.proxyblob.util.Constants.Success;
 
-@UtilityClass
 public class AgentUtil {
 
-    public AgentCreationResult createAgent(AppContext context, String connString) {
+    public static AgentCreationResult createAgent(AppContext context, String connString) {
         ParseResult parsed = parseConnectionString(connString);
         if (parsed.getErrorCode() != Success) {
             return AgentCreationResult.builder()
@@ -80,7 +79,7 @@ public class AgentUtil {
         }
     }
 
-    public int start(AppContext context, Agent agent) {
+    public static int start(AppContext context, Agent agent) {
         int result = writeInfoBlob(agent, context);
         if (result != Success) {
             stop(agent);
@@ -103,11 +102,11 @@ public class AgentUtil {
         return Success;
     }
 
-    private void stop(Agent agent) {
+    private static void stop(Agent agent) {
         agent.getHandler().stop();
     }
 
-    private void healthCheck(AppContext context, Agent agent) {
+    private static void healthCheck(AppContext context, Agent agent) {
         ScheduledExecutorService scheduler = context.getScheduler();
         Runnable task = () -> {
             if (context.isStopped()) {
@@ -138,7 +137,7 @@ public class AgentUtil {
         scheduler.scheduleAtFixedRate(task, 0, 30, TimeUnit.SECONDS);
     }
 
-    private int writeInfoBlob(Agent agent, AppContext context) {
+    private static int writeInfoBlob(Agent agent, AppContext context) {
         try {
             String info = getCurrentInfo();
             byte[] encrypted = CryptoUtil.xor(info.getBytes(StandardCharsets.UTF_8), InfoKey);
@@ -166,7 +165,7 @@ public class AgentUtil {
         }
     }
 
-    private ParseResult parseConnectionString(String connString) {
+    private static ParseResult parseConnectionString(String connString) {
         if (connString == null || connString.isEmpty()) {
             return ParseResult.builder()
                     .storageUrl(null)
@@ -204,7 +203,7 @@ public class AgentUtil {
         }
     }
 
-    private ParseResult error() {
+    private static ParseResult error() {
         return ParseResult.builder()
                 .storageUrl(null)
                 .containerId(null)
@@ -213,7 +212,7 @@ public class AgentUtil {
                 .build();
     }
 
-    private String getCurrentInfo() {
+    private static String getCurrentInfo() {
         String hostname;
         try {
             hostname = InetAddress.getLocalHost().getHostName();

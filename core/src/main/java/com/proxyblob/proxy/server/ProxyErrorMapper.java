@@ -1,7 +1,5 @@
 package com.proxyblob.proxy.server;
 
-import lombok.experimental.UtilityClass;
-
 import java.util.Map;
 
 import static com.proxyblob.errorcodes.ErrorCodes.ErrAddressNotSupported;
@@ -29,10 +27,9 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrTransportTimeout;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrUnexpectedPacket;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrUnsupportedCommand;
 
-@UtilityClass
 public class ProxyErrorMapper {
 
-    private final Map<Byte, String> ERROR_MESSAGES = Map.ofEntries(
+    private static final Map<Byte, String> ERROR_MESSAGES = Map.ofEntries(
             Map.entry(ErrNone, "no error"),
             Map.entry(ErrInvalidCommand, "invalid command"),
             Map.entry(ErrContextCanceled, "context canceled"),
@@ -59,7 +56,7 @@ public class ProxyErrorMapper {
             Map.entry(ErrInvalidCrypto, "invalid cryptographic operation")
     );
 
-    public String getMessage(byte errorCode) {
+    public static String getMessage(byte errorCode) {
         return ERROR_MESSAGES.getOrDefault(errorCode, "unknown error");
     }
 }

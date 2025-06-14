@@ -1,15 +1,12 @@
 package com.proxyblob.util;
 
-import lombok.experimental.UtilityClass;
-
-@UtilityClass
 public class Constants {
 
-    public final String InfoBlobName = "info";
-    public final String RequestBlobName = "request";
-    public final String ResponseBlobName = "response";
-    public final byte[] InfoKey = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xB1, 0x0B};
-    public final String Banner = """
+    public static final String InfoBlobName = "info";
+    public static final String RequestBlobName = "request";
+    public static final String ResponseBlobName = "response";
+    public static final byte[] InfoKey = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xB1, 0x0B};
+    public static final String Banner = """
             
               ____                      ____  _       _     
              |  _ \\ _ __ _____  ___   _| __ )| | ___ | |__  

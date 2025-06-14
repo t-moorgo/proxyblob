@@ -7,8 +7,6 @@ import com.proxyblob.storage.StorageManager;
 import com.proxyblob.transport.BlobTransport;
 import com.proxyblob.util.Constants;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 
 @CommandLine.Command(
@@ -18,8 +16,6 @@ import picocli.CommandLine;
 )
 @RequiredArgsConstructor
 public class StartCommand implements Runnable {
-
-    private static final Logger log = LoggerFactory.getLogger(StartCommand.class);
 
     @CommandLine.Option(
             names = {"-l", "--listen"},
@@ -34,12 +30,12 @@ public class StartCommand implements Runnable {
     public void run() {
         String containerId = AppState.getSelectedAgent();
         if (containerId == null || containerId.isBlank()) {
-            log.warn("No agent selected. Use 'select <container-id>' first.");
+            System.out.println("⚠️ No agent selected. Use 'select <container-id>' first.");
             return;
         }
 
         if (AppState.isProxyRunning(containerId)) {
-            log.warn("Proxy already running for this agent.");
+            System.out.println("⚠️ Proxy already running for this agent.");
             return;
         }
 
@@ -71,11 +67,12 @@ public class StartCommand implements Runnable {
                     agentInfo = containerId;
                 }
 
-                log.info("Proxy started for agent: {} on port: {}", agentInfo, port);
+                System.out.printf("🚀 Proxy started for agent: %s on port: %d%n", agentInfo, port);
             }
 
         } catch (Exception e) {
-            log.error("Cannot start proxy: {}", e.getMessage(), e);
+            System.err.printf("❌ Cannot start proxy: %s%n", e.getMessage());
+            e.printStackTrace();
         }
     }
 }

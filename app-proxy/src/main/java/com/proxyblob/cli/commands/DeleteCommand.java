@@ -4,8 +4,6 @@ import com.proxyblob.cli.AgentIdCandidates;
 import com.proxyblob.state.AppState;
 import com.proxyblob.storage.StorageManager;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 
 import java.util.List;
@@ -19,8 +17,6 @@ import java.util.Scanner;
 @RequiredArgsConstructor
 public class DeleteCommand implements Runnable {
 
-    private static final Logger log = LoggerFactory.getLogger(DeleteCommand.class);
-
     @CommandLine.Parameters(
             arity = "0..*",
             paramLabel = "containers-id",
@@ -28,7 +24,6 @@ public class DeleteCommand implements Runnable {
             completionCandidates = AgentIdCandidates.class
     )
     private List<String> containerIds;
-
 
     private final StorageManager storageManager;
 
@@ -39,19 +34,19 @@ public class DeleteCommand implements Runnable {
             if (selectedAgent != null && !selectedAgent.isBlank()) {
                 containerIds = List.of(selectedAgent);
             } else {
-                log.warn("No container ID provided and no agent selected.");
+                System.out.println("⚠️ No container ID provided and no agent selected.");
                 return;
             }
         }
 
         for (String containerId : containerIds) {
-            log.info("Are you sure you want to delete container '{}'? [y/N]", containerId);
+            System.out.printf("❓ Are you sure you want to delete container '%s'? [y/N]: ", containerId);
 
             Scanner scanner = new Scanner(System.in);
             String input = scanner.nextLine().trim();
 
             if (!input.equalsIgnoreCase("y")) {
-                log.info("Deletion cancelled for container: {}", containerId);
+                System.out.println("🚫 Deletion cancelled for container: " + containerId);
                 continue;
             }
 
@@ -62,10 +57,10 @@ public class DeleteCommand implements Runnable {
                     AppState.setSelectedAgent(null);
                 }
 
-                log.info("Container deleted successfully: {}", containerId);
-
+                System.out.println("✅ Container deleted successfully: " + containerId);
             } catch (Exception e) {
-                log.error("Failed to delete container: {}", containerId, e);
+                System.err.println("❌ Failed to delete container: " + containerId);
+                e.printStackTrace();
             }
         }
     }

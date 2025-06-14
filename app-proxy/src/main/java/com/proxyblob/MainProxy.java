@@ -2,14 +2,12 @@ package com.proxyblob;
 
 import com.proxyblob.cli.CliInitializer;
 import com.proxyblob.cli.ReplRunner;
-import com.proxyblob.config.LoggingConfig;
 import com.proxyblob.state.AppState;
 import picocli.CommandLine;
 
 public class MainProxy {
 
     public static void main(String[] args) throws Exception {
-        LoggingConfig.configureLogging();
         CliInitializer.setupCLI(args);
 
         if (args.length == 0) {

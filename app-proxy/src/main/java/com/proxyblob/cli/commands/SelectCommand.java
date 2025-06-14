@@ -4,8 +4,6 @@ import com.proxyblob.cli.AgentIdCandidates;
 import com.proxyblob.state.AppState;
 import com.proxyblob.storage.StorageManager;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 
 @CommandLine.Command(
@@ -16,15 +14,12 @@ import picocli.CommandLine;
 @RequiredArgsConstructor
 public class SelectCommand implements Runnable {
 
-    private static final Logger log = LoggerFactory.getLogger(SelectCommand.class);
-
     @CommandLine.Parameters(
             index = "0",
             description = "ID of the container to select",
             completionCandidates = AgentIdCandidates.class
     )
     private String containerId;
-
 
     private final StorageManager storageManager;
 
@@ -40,11 +35,12 @@ public class SelectCommand implements Runnable {
                 agentInfo = "unknown@host";
             }
 
-            log.info("Agent selected: {}", agentInfo);
+            System.out.println("✅ Agent selected: " + agentInfo);
             AppState.setCliPrompt(agentInfo + " »");
 
         } catch (Exception e) {
-            log.error("Failed to select agent: {}", containerId, e);
+            System.err.println("❌ Failed to select agent: " + containerId);
+            e.printStackTrace();
         }
     }
 }

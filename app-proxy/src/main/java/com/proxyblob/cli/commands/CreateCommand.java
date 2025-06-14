@@ -3,8 +3,6 @@ package com.proxyblob.cli.commands;
 import com.proxyblob.dto.ContainerCreationResult;
 import com.proxyblob.storage.StorageManager;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -19,8 +17,6 @@ import java.util.Base64;
 )
 @RequiredArgsConstructor
 public class CreateCommand implements Runnable {
-
-    private static final Logger log = LoggerFactory.getLogger(CreateCommand.class);
 
     private final StorageManager storageManager;
 
@@ -38,10 +34,11 @@ public class CreateCommand implements Runnable {
             String encodedConnStr = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(result.getConnectionString().getBytes(StandardCharsets.UTF_8));
 
-            log.info("Agent container created successfully: {}", result.getContainerId());
-            log.info("Connection string: {}", encodedConnStr);
+            System.out.println("✅ Agent container created successfully: " + result.getContainerId());
+            System.out.println("🔑 Connection string: " + encodedConnStr);
         } catch (Exception e) {
-            log.error("Failed to create agent container", e);
+            System.out.println("❌ Failed to create agent container");
+            e.printStackTrace();
         }
     }
 }

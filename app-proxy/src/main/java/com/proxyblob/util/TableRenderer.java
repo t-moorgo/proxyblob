@@ -2,6 +2,7 @@ package com.proxyblob.util;
 
 import com.proxyblob.dto.ContainerInfo;
 import de.vandermeer.asciitable.AsciiTable;
+import de.vandermeer.asciitable.CWC_LongestLine;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -31,6 +32,7 @@ public class TableRenderer {
             table.addRule();
         }
 
+        table.getRenderer().setCWC(new CWC_LongestLine());
         return table.render();
     }
 }

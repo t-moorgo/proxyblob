@@ -6,6 +6,8 @@ public class Constants {
     public static final String RequestBlobName = "request";
     public static final String ResponseBlobName = "response";
     public static final byte[] InfoKey = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xB1, 0x0B};
+    public static final String ANSI_RESET = "\u001B[0m";
+    public static final String ANSI_YELLOW_BOLD = "\u001B[1;33m";
     public static final String Banner = """
             
               ____                      ____  _       _     

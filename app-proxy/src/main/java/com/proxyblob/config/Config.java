@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Paths;
 
 @Getter
@@ -32,23 +33,29 @@ public class Config {
     }
 
     public static Config load(String configPath) {
-        if (configPath == null || configPath.isEmpty()) {
-            configPath = "config.json";
-        }
-
-        File file = Paths.get(configPath).toAbsolutePath().toFile();
-
-        if (!file.exists()) {
-            throw new IllegalStateException("Configuration file not found at: " + file.getAbsolutePath());
-        }
-
         ObjectMapper mapper = new ObjectMapper();
+
         try {
-            Config config = mapper.readValue(file, Config.class);
-            config.validate();
-            return config;
+            if (configPath == null || configPath.isEmpty()) {
+                try (InputStream is = Config.class.getClassLoader().getResourceAsStream("config.json")) {
+                    if (is == null) {
+                        throw new IllegalStateException("Default config.json not found in resources");
+                    }
+                    Config config = mapper.readValue(is, Config.class);
+                    config.validate();
+                    return config;
+                }
+            } else {
+                File file = Paths.get(configPath).toAbsolutePath().toFile();
+                if (!file.exists()) {
+                    throw new IllegalStateException("Configuration file not found at: " + file.getAbsolutePath());
+                }
+                Config config = mapper.readValue(file, Config.class);
+                config.validate();
+                return config;
+            }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to read or parse config file: " + file.getAbsolutePath(), e);
+            throw new RuntimeException("Failed to load config", e);
         }
     }
 }

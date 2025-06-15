@@ -12,6 +12,8 @@ import com.proxyblob.state.AppState;
 import com.proxyblob.storage.StorageManager;
 import picocli.CommandLine;
 
+import static com.proxyblob.util.Constants.ANSI_RESET;
+import static com.proxyblob.util.Constants.ANSI_YELLOW_BOLD;
 import static com.proxyblob.util.Constants.Banner;
 
 public class CliInitializer {
@@ -50,10 +52,10 @@ public class CliInitializer {
                 return args[i + 1];
             }
         }
-        return "config.json";
+        return null;
     }
 
     private static void printBanner() {
-        System.out.println(Banner);
+        System.out.println(ANSI_YELLOW_BOLD + Banner + ANSI_RESET);
     }
 }

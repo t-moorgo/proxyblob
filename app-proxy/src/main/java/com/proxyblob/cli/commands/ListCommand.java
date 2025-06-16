@@ -4,10 +4,12 @@ import com.proxyblob.dto.ContainerInfo;
 import com.proxyblob.storage.StorageManager;
 import com.proxyblob.util.TableRenderer;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import picocli.CommandLine.Command;
 
 import java.util.List;
 
+@Slf4j
 @Command(
         name = "list",
         aliases = {"ls"},
@@ -24,7 +26,7 @@ public class ListCommand implements Runnable {
             List<ContainerInfo> containers = storageManager.listAgentContainers();
 
             if (containers.isEmpty()) {
-                System.out.println("📦 No agent containers found.");
+                log.info("No agent containers found.");
                 return;
             }
 
@@ -32,8 +34,7 @@ public class ListCommand implements Runnable {
             System.out.println(table);
 
         } catch (Exception e) {
-            System.err.println("❌ Failed to list containers.");
-            e.printStackTrace();
+            log.error("Failed to list containers.", e);
         }
     }
 }

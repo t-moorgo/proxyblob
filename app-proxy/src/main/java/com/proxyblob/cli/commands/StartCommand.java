@@ -7,8 +7,10 @@ import com.proxyblob.storage.StorageManager;
 import com.proxyblob.transport.BlobTransport;
 import com.proxyblob.util.Constants;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import picocli.CommandLine;
 
+@Slf4j
 @CommandLine.Command(
         name = "start",
         aliases = {"proxy"},
@@ -30,12 +32,12 @@ public class StartCommand implements Runnable {
     public void run() {
         String containerId = AppState.getSelectedAgent();
         if (containerId == null || containerId.isBlank()) {
-            System.out.println("⚠️ No agent selected. Use 'select <container-id>' first.");
+            log.warn("No agent selected. Use 'select <container-id>' first.");
             return;
         }
 
         if (AppState.isProxyRunning(containerId)) {
-            System.out.println("⚠️ Proxy already running for this agent.");
+            log.warn("Proxy already running for this agent.");
             return;
         }
 
@@ -67,12 +69,11 @@ public class StartCommand implements Runnable {
                     agentInfo = containerId;
                 }
 
-                System.out.printf("🚀 Proxy started for agent: %s on port: %d%n", agentInfo, port);
+                log.info("Proxy started for agent: {} on port: {}", agentInfo, port);
             }
 
         } catch (Exception e) {
-            System.err.printf("❌ Cannot start proxy: %s%n", e.getMessage());
-            e.printStackTrace();
+            log.error("Cannot start proxy: {}", e.getMessage(), e);
         }
     }
 }

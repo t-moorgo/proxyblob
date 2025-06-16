@@ -4,8 +4,10 @@ import com.proxyblob.proxy.server.ProxyServer;
 import com.proxyblob.state.AppState;
 import com.proxyblob.storage.StorageManager;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import picocli.CommandLine;
 
+@Slf4j
 @CommandLine.Command(
         name = "stop",
         description = "Stop running proxy for the selected agent"
@@ -19,13 +21,13 @@ public class StopCommand implements Runnable {
     public void run() {
         String containerId = AppState.getSelectedAgent();
         if (containerId == null || containerId.isBlank()) {
-            System.out.println("⚠️ No agent selected. Use 'select <container-id>' first.");
+            log.warn("No agent selected. Use 'select <container-id>' first.");
             return;
         }
 
         ProxyServer server = AppState.getProxy(containerId);
         if (server == null) {
-            System.out.println("⚠️ No proxy is currently running for this agent.");
+            log.warn("No proxy is currently running for this agent.");
             return;
         }
 
@@ -39,6 +41,6 @@ public class StopCommand implements Runnable {
             agentInfo = containerId;
         }
 
-        System.out.printf("🛑 Proxy stopped for agent: %s%n", agentInfo);
+        log.info("Proxy stopped for agent: {}", agentInfo);
     }
 }

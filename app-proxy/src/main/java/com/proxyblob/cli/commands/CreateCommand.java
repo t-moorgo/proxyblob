@@ -3,6 +3,7 @@ package com.proxyblob.cli.commands;
 import com.proxyblob.dto.ContainerCreationResult;
 import com.proxyblob.storage.StorageManager;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -10,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 
+@Slf4j
 @Command(
         name = "create",
         aliases = {"new"},
@@ -34,11 +36,10 @@ public class CreateCommand implements Runnable {
             String encodedConnStr = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(result.getConnectionString().getBytes(StandardCharsets.UTF_8));
 
-            System.out.println("✅ Agent container created successfully: " + result.getContainerId());
-            System.out.println("🔑 Connection string: " + encodedConnStr);
+            log.info("Agent container created successfully: {}", result.getContainerId());
+            log.info("Connection string: {}", encodedConnStr);
         } catch (Exception e) {
-            System.out.println("❌ Failed to create agent container");
-            e.printStackTrace();
+            log.error("Failed to create agent container", e);
         }
     }
 }

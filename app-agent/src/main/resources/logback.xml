@@ -1,0 +1,27 @@
+<configuration>
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <withJansi>true</withJansi>
+        <encoder>
+            <pattern>%d{HH:mm:ss} %highlight(%-4level) %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+
+    <logger name="com.azure" level="WARN"/>
+    <logger name="com.microsoft" level="WARN"/>
+    <logger name="org.apache" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
+    <logger name="reactor" level="WARN"/>
+    <logger name="info.picocli" level="WARN"/>
+    <logger name="org.jline" level="WARN"/>
+    <logger name="org.bouncycastle" level="WARN"/>
+    <logger name="de.vandermeer" level="WARN"/>
+    <logger name="org.slf4j" level="WARN"/>
+    <logger name="org.codehaus" level="WARN"/>
+    <logger name="org.hibernate" level="WARN"/>
+</configuration>

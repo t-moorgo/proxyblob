@@ -4,8 +4,10 @@ import com.proxyblob.cli.AgentIdCandidates;
 import com.proxyblob.state.AppState;
 import com.proxyblob.storage.StorageManager;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import picocli.CommandLine;
 
+@Slf4j
 @CommandLine.Command(
         name = "select",
         aliases = {"use"},
@@ -35,12 +37,11 @@ public class SelectCommand implements Runnable {
                 agentInfo = "unknown@host";
             }
 
-            System.out.println("✅ Agent selected: " + agentInfo);
+            log.info("Agent selected: {}", agentInfo);
             AppState.setCliPrompt(agentInfo + " »");
 
         } catch (Exception e) {
-            System.err.println("❌ Failed to select agent: " + containerId);
-            e.printStackTrace();
+            log.error("Failed to select agent: {}", containerId, e);
         }
     }
 }

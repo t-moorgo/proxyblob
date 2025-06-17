@@ -126,9 +126,8 @@ public class BaseHandler {
 
         // Генерируем пару ключей X25519
         KeyPair keyPair = CryptoUtil.generateKeyPair();
-        X25519PublicKeyParameters publicKey = keyPair.getPublicKey();
-
-        byte[] publicKeyBytes = publicKey.getEncoded();
+        byte[] privateKeyBytes = keyPair.getPrivateKey().getEncoded();
+        byte[] publicKeyBytes = keyPair.getPublicKey().getEncoded();
         byte[] nonce = CryptoUtil.generateNonce();
 
         // Получаем соединение
@@ -138,14 +137,18 @@ public class BaseHandler {
             return ErrConnectionNotFound;
         }
 
-        // Собираем данные (nonce + publicKey), сохраняем как shared secret data
-        byte[] data = new byte[nonce.length + publicKeyBytes.length];
-        System.arraycopy(nonce, 0, data, 0, nonce.length);
-        System.arraycopy(publicKeyBytes, 0, data, nonce.length, publicKeyBytes.length);
-        conn.setSecretKey(data);
+        // Собираем данные (nonce + privateKey), сохраняем как secretKey
+        byte[] secretData = new byte[nonce.length + privateKeyBytes.length];
+        System.arraycopy(nonce, 0, secretData, 0, nonce.length);
+        System.arraycopy(privateKeyBytes, 0, secretData, nonce.length, privateKeyBytes.length);
+        conn.setSecretKey(secretData);
 
-        // Отправляем пакет CmdNew с nonce + publicKey
-        return sendPacket(CmdNew, connectionId, data);
+        // Отправляем клиенту (агенту) CmdNew с nonce + publicKey
+        byte[] dataToSend = new byte[nonce.length + publicKeyBytes.length];
+        System.arraycopy(nonce, 0, dataToSend, 0, nonce.length);
+        System.arraycopy(publicKeyBytes, 0, dataToSend, nonce.length, publicKeyBytes.length);
+
+        return sendPacket(CmdNew, connectionId, dataToSend);
     }
 
     public byte sendConnAck(UUID connectionId) {

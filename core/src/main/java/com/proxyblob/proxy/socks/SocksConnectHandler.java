@@ -69,7 +69,7 @@ public class SocksConnectHandler {
             String host = parts[0];
             int port = Integer.parseInt(parts[1]);
 
-            SocketAddress sockaddr = new InetSocketAddress(host, port);
+            SocketAddress sockaddr = InetSocketAddress.createUnresolved(host, port);
             targetSocket = new Socket();
             targetSocket.connect(sockaddr, 10_000);
             System.out.println("[SocksConnectHandler] Connected to target: " + host + ":" + port);

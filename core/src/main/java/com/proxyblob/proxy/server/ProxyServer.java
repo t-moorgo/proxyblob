@@ -93,8 +93,15 @@ public class ProxyServer implements PacketHandler {
 
     @Override
     public byte onNew(UUID connectionId, byte[] data) {
-        System.out.println("[ProxyServer] onNew called - unexpected");
-        return ErrUnexpectedPacket;
+        System.out.println("[ProxyServer] onNew called: " + connectionId);
+
+        Connection conn = baseHandler.getConnections().get(connectionId);
+        if (conn == null) {
+            return ErrConnectionNotFound;
+        }
+
+        conn.getReadBuffer().offer(data);
+        return ErrNone;
     }
 
     @Override

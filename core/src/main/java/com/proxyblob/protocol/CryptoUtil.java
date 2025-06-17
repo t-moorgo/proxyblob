@@ -20,7 +20,7 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 
 public class CryptoUtil {
 
-    public static final int NONCE_SIZE = 24;
+    public static final int NONCE_SIZE = 12;
     public static final int KEY_SIZE = 32;
 
     private static final int MAC_SIZE_BITS = 128;

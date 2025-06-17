@@ -42,10 +42,13 @@ public class Connection {
         this.readBuffer = new LinkedBlockingQueue<>();
         this.createdAt = Instant.now();
         this.lastActivity = Instant.now();
+
+        System.out.println("[Connection] Created new connection: " + id);
     }
 
     public byte close() {
         if (state == StateClosed) {
+            System.out.println("[Connection] Already closed: " + id);
             return ErrNone;
         }
 
@@ -54,15 +57,29 @@ public class Connection {
         if (closed.compareAndSet(false, true)) {
             synchronized (closeSignal) {
                 closeSignal.notifyAll();
+                System.out.println("[Connection] closeSignal notified for: " + id);
             }
 
             if (socket != null && !socket.isClosed()) {
                 try {
                     socket.close();
+                    System.out.println("[Connection] TCP socket closed for: " + id);
                 } catch (Exception e) {
+                    System.out.println("[Connection] Failed to close TCP socket for: " + id);
                     return ErrConnectionClosed;
                 }
             }
+
+            if (datagramSocket != null && !datagramSocket.isClosed()) {
+                try {
+                    datagramSocket.close();
+                    System.out.println("[Connection] UDP socket closed for: " + id);
+                } catch (Exception e) {
+                    System.out.println("[Connection] Failed to close UDP socket for: " + id);
+                }
+            }
+        } else {
+            System.out.println("[Connection] Already marked as closed: " + id);
         }
 
         return ErrNone;
@@ -71,8 +88,10 @@ public class Connection {
     public void awaitClose() throws InterruptedException {
         synchronized (closeSignal) {
             while (!closed.get()) {
+                System.out.println("[Connection] Waiting for close: " + id);
                 closeSignal.wait();
             }
         }
+        System.out.println("[Connection] Closed signal received: " + id);
     }
 }

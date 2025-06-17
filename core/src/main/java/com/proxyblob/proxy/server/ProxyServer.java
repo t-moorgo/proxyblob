@@ -48,6 +48,7 @@ public class ProxyServer implements PacketHandler {
     public ProxyServer(Transport transport, AppContext context) {
         this.context = context;
         this.baseHandler = new BaseHandler(transport, this, context);
+        System.out.println("[ProxyServer] Initialized with BaseHandler");
     }
 
     @Override
@@ -59,7 +60,9 @@ public class ProxyServer implements PacketHandler {
 
             this.listener = new ServerSocket();
             this.listener.bind(new InetSocketAddress(host, port));
-        } catch (IOException | NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            System.out.println("[ProxyServer] Listening on " + address);
+        } catch (Exception e) {
+            System.out.println("[ProxyServer] Failed to start: " + e.getMessage());
             stop();
             return;
         }
@@ -75,26 +78,32 @@ public class ProxyServer implements PacketHandler {
         if (listener != null && !listener.isClosed()) {
             try {
                 listener.close();
+                System.out.println("[ProxyServer] Listener closed");
             } catch (IOException e) {
-                //TODO что то сделать
+                System.out.println("[ProxyServer] Failed to close listener: " + e.getMessage());
             }
         }
     }
 
     @Override
     public void receiveLoop() {
+        System.out.println("[ProxyServer] Starting receive loop");
         baseHandler.receiveLoop();
     }
 
     @Override
     public byte onNew(UUID connectionId, byte[] data) {
+        System.out.println("[ProxyServer] onNew called - unexpected");
         return ErrUnexpectedPacket;
     }
 
     @Override
     public byte onAck(UUID connectionId, byte[] data) {
+        System.out.println("[ProxyServer] onAck called for connection: " + connectionId);
+
         Connection conn = baseHandler.getConnections().get(connectionId);
         if (conn == null) {
+            System.out.println("[ProxyServer] Connection not found for ACK");
             return ErrConnectionNotFound;
         }
 
@@ -102,29 +111,24 @@ public class ProxyServer implements PacketHandler {
             return ErrInvalidState;
         }
 
-        if (data == null) {
-            return ErrInvalidPacket;
-        }
-        if (data.length < 32) {
+        if (data == null || data.length < 32) {
             return ErrInvalidPacket;
         }
 
         byte[] clientPublicKey = Arrays.copyOfRange(data, 0, 32);
-
         byte[] serverData = conn.getSecretKey();
-        if (serverData == null) {
-            return ErrInvalidPacket;
-        }
-        if (serverData.length != 56) {
+        if (serverData == null || serverData.length != 56) {
             return ErrInvalidPacket;
         }
 
         byte[] nonce = Arrays.copyOfRange(serverData, 0, 24);
         byte[] serverPrivateKey = Arrays.copyOfRange(serverData, 24, 56);
 
-        X25519PrivateKeyParameters privateKey = new X25519PrivateKeyParameters(serverPrivateKey, 0);
-        X25519PublicKeyParameters publicKey = new X25519PublicKeyParameters(clientPublicKey, 0);
-        CryptoResult result = CryptoUtil.deriveKey(privateKey, publicKey, nonce);
+        CryptoResult result = CryptoUtil.deriveKey(
+                new X25519PrivateKeyParameters(serverPrivateKey, 0),
+                new X25519PublicKeyParameters(clientPublicKey, 0),
+                nonce
+        );
         if (result.getData() == null || result.getData().length != CryptoUtil.KEY_SIZE) {
             return result.getStatus();
         }
@@ -134,6 +138,7 @@ public class ProxyServer implements PacketHandler {
         conn.setState(StateConnected);
         conn.setLastActivity(Instant.now());
 
+        System.out.println("[ProxyServer] ACK complete, connection ready: " + connectionId);
         return ErrNone;
     }
 
@@ -166,37 +171,35 @@ public class ProxyServer implements PacketHandler {
     @Override
     public byte onClose(UUID connectionId, byte errorCode) {
         Connection conn = baseHandler.getConnections().get(connectionId);
-        if (conn == null) {
-            return ErrNone;
+        if (conn != null) {
+            conn.close();
+            baseHandler.getConnections().remove(connectionId);
+            System.out.println("[ProxyServer] Closed connection: " + connectionId + " with code " + errorCode);
         }
-
-        conn.close();
-        baseHandler.getConnections().remove(connectionId);
         return errorCode;
     }
 
     private void acceptLoop() {
+        System.out.println("[ProxyServer] Starting accept loop");
         while (!context.isStopped()) {
             try {
                 Socket clientSocket = listener.accept();
-                context.getGeneralExecutor().submit(() -> handleConnection(clientSocket)); // аналог `go`
+                System.out.println("[ProxyServer] Accepted new connection from: " + clientSocket.getRemoteSocketAddress());
+                context.getGeneralExecutor().submit(() -> handleConnection(clientSocket));
             } catch (IOException e) {
-                if (context.isStopped()) {
+                if (context.isStopped()) return;
+                if (!(e instanceof SocketTimeoutException || e instanceof SocketException)) {
+                    System.out.println("[ProxyServer] Error in acceptLoop: " + e.getMessage());
                     return;
                 }
-
-                if (e instanceof SocketTimeoutException || e instanceof SocketException) {
-                    continue;
-                }
-
-                return;
             }
         }
     }
 
     private void handleConnection(Socket clientSocket) {
+        UUID connId = UUID.randomUUID();
+        System.out.println("[ProxyServer] Handling new connection: " + connId);
         try {
-            UUID connId = UUID.randomUUID();
             Connection proxyConn = new Connection(connId);
             baseHandler.getConnections().put(connId, proxyConn);
 
@@ -206,22 +209,10 @@ public class ProxyServer implements PacketHandler {
                 return;
             }
 
-            byte[] ack;
-            try {
-                ack = proxyConn.getReadBuffer().poll(5, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                baseHandler.sendClose(connId, ErrHandlerStopped);
-                baseHandler.getConnections().remove(connId);
-                return;
-            }
-
+            byte[] ack = proxyConn.getReadBuffer().poll(5, TimeUnit.SECONDS);
             if (ack == null) {
-                if (context.isStopped()) {
-                    baseHandler.sendClose(connId, ErrHandlerStopped);
-                } else {
-                    baseHandler.sendClose(connId, ErrTransportTimeout);
-                }
+                byte closeReason = context.isStopped() ? ErrHandlerStopped : ErrTransportTimeout;
+                baseHandler.sendClose(connId, closeReason);
                 baseHandler.getConnections().remove(connId);
                 return;
             }
@@ -230,91 +221,66 @@ public class ProxyServer implements PacketHandler {
             proxyConn.setLastActivity(Instant.now());
 
             BlockingQueue<Byte> errQueue = new ArrayBlockingQueue<>(2);
-
             context.getGeneralExecutor().submit(() -> forwardToAgent(clientSocket, proxyConn, errQueue));
             context.getGeneralExecutor().submit(() -> forwardToClient(clientSocket, proxyConn, errQueue));
 
             while (true) {
-                if (context.isStopped()) break;
-                if (proxyConn.getClosed().get()) break;
-
-                try {
-                    Byte result = errQueue.poll(100, TimeUnit.MILLISECONDS);
-                    if (result != null) {
-                        if (result != ErrNone && result != ErrConnectionClosed) {
-                            //TODO что то сделать
-                        }
-                        break;
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                if (context.isStopped() || proxyConn.getClosed().get()) break;
+                Byte result = errQueue.poll(100, TimeUnit.MILLISECONDS);
+                if (result != null && result != ErrNone && result != ErrConnectionClosed) {
+                    System.out.println("[ProxyServer] Forwarding error: " + result);
                     break;
                 }
             }
 
-
             baseHandler.sendClose(connId, ErrConnectionClosed);
             proxyConn.close();
             baseHandler.getConnections().remove(connId);
+            System.out.println("[ProxyServer] Connection fully closed: " + connId);
+        } catch (Exception e) {
+            System.out.println("[ProxyServer] handleConnection error: " + e.getMessage());
         } finally {
             try {
                 clientSocket.close();
             } catch (IOException ignore) {
-                //TODO что то сделать
             }
         }
     }
 
     private void forwardToAgent(Socket clientSocket, Connection proxyConn, BlockingQueue<Byte> errQueue) {
         byte[] buffer = new byte[64 * 1024];
-
-        while (true) {
-            if (proxyConn.getClosed().get() || context.isStopped()) {
-                return;
-            }
-
-            int readBytes;
+        while (!proxyConn.getClosed().get() && !context.isStopped()) {
             try {
-                readBytes = clientSocket.getInputStream().read(buffer);
+                int readBytes = clientSocket.getInputStream().read(buffer);
                 if (readBytes == -1) {
                     errQueue.offer(ErrConnectionClosed);
                     return;
                 }
-            } catch (IOException e) {
-                if (e instanceof java.net.SocketTimeoutException) {
-                    errQueue.offer(ErrTransportTimeout);
-                } else {
-                    errQueue.offer(ErrNetworkUnreachable);
+
+                byte[] dataToSend = Arrays.copyOf(buffer, readBytes);
+                byte resultCode = baseHandler.sendData(proxyConn.getId(), dataToSend);
+                if (resultCode != ErrNone) {
+                    errQueue.offer(ErrPacketSendFailed);
+                    return;
                 }
+
+                proxyConn.setLastActivity(Instant.now());
+            } catch (IOException e) {
+                errQueue.offer(mapIOException(e));
                 return;
             }
-
-            byte resultCode = baseHandler.sendData(proxyConn.getId(), Arrays.copyOf(buffer, readBytes));
-            if (resultCode != ErrNone) {
-                errQueue.offer(ErrPacketSendFailed);
-                return;
-            }
-
-            proxyConn.setLastActivity(Instant.now());
         }
     }
 
     private void forwardToClient(Socket clientSocket, Connection proxyConn, BlockingQueue<Byte> errQueue) {
-        while (true) {
-            if (proxyConn.getClosed().get() || context.isStopped()) return;
-
-            byte[] data;
+        while (!proxyConn.getClosed().get() && !context.isStopped()) {
             try {
-                data = proxyConn.getReadBuffer().take();
+                byte[] data = proxyConn.getReadBuffer().take();
+                proxyConn.setLastActivity(Instant.now());
+                clientSocket.getOutputStream().write(data);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
-            }
-
-            proxyConn.setLastActivity(Instant.now());
-
-            try {
-                clientSocket.getOutputStream().write(data);
             } catch (IOException e) {
                 errQueue.offer(mapIOException(e));
                 return;
@@ -323,12 +289,8 @@ public class ProxyServer implements PacketHandler {
     }
 
     private byte mapIOException(IOException e) {
-        if (e instanceof SocketTimeoutException) {
-            return ErrTransportTimeout;
-        } else if (e instanceof EOFException || e instanceof SocketException) {
-            return ErrConnectionClosed;
-        } else {
-            return ErrNetworkUnreachable;
-        }
+        if (e instanceof SocketTimeoutException) return ErrTransportTimeout;
+        if (e instanceof EOFException || e instanceof SocketException) return ErrConnectionClosed;
+        return ErrNetworkUnreachable;
     }
 }

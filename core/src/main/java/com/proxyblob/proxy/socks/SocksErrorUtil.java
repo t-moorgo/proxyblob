@@ -39,6 +39,10 @@ public class SocksErrorUtil {
             case ErrAuthFailed -> socksReplyCode = NoAcceptableMethods;
         }
 
+        System.out.println("[SocksErrorUtil] Sending SOCKS error to connection: " + conn.getId());
+        System.out.println("[SocksErrorUtil] Internal error code: " + errCode);
+        System.out.println("[SocksErrorUtil] SOCKS reply code: " + String.format("0x%02X", socksReplyCode));
+
         byte[] response = new byte[]{
                 Version5,
                 socksReplyCode,

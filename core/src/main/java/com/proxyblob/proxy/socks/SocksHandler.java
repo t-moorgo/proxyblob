@@ -45,11 +45,13 @@ public class SocksHandler implements PacketHandler {
 
     @Override
     public void start(String address) {
+        System.out.println("[SocksHandler] Starting SOCKS handler");
         context.getGeneralExecutor().submit(this::receiveLoop);
     }
 
     @Override
     public void stop() {
+        System.out.println("[SocksHandler] Stopping SOCKS handler");
         baseHandler.closeAllConnections();
         context.stop();
     }
@@ -61,22 +63,25 @@ public class SocksHandler implements PacketHandler {
 
     @Override
     public byte onNew(UUID connectionId, byte[] data) {
+        System.out.println("[SocksHandler] onNew: " + connectionId);
         if (baseHandler.getConnections().containsKey(connectionId)) {
+            System.out.println("[SocksHandler] Connection already exists");
             return ErrConnectionExists;
         }
 
         Connection conn = new Connection(connectionId);
         baseHandler.getConnections().put(connectionId, conn);
 
-        // Если data содержит nonce (24 байта) + server public key (32 байта)
         if (data.length >= 24 + 32) {
             byte[] tmp = new byte[56];
             System.arraycopy(data, 0, tmp, 0, 56);
             conn.setSecretKey(tmp);
+            System.out.println("[SocksHandler] Received key exchange data (nonce + serverPubKey)");
         }
 
         byte errCode = baseHandler.sendConnAck(connectionId);
         if (errCode != ErrNone) {
+            System.out.println("[SocksHandler] Failed to send ConnAck, error: " + errCode);
             return errCode;
         }
 
@@ -86,6 +91,7 @@ public class SocksHandler implements PacketHandler {
 
     @Override
     public byte onAck(UUID connectionId, byte[] data) {
+        System.out.println("[SocksHandler] onAck called unexpectedly");
         return ErrUnexpectedPacket;
     }
 
@@ -93,16 +99,19 @@ public class SocksHandler implements PacketHandler {
     public byte onData(UUID connectionId, byte[] data) {
         Connection conn = baseHandler.getConnections().get(connectionId);
         if (conn == null) {
+            System.out.println("[SocksHandler] onData: connection not found: " + connectionId);
             return ErrConnectionNotFound;
         }
 
         CryptoResult result = CryptoUtil.decrypt(conn.getSecretKey(), data);
         if (result.getStatus() != ErrNone) {
+            System.out.println("[SocksHandler] Failed to decrypt data, error: " + result.getStatus());
             baseHandler.sendClose(connectionId, ErrInvalidCrypto);
             return ErrInvalidCrypto;
         }
 
         if (context.isStopped()) {
+            System.out.println("[SocksHandler] Context stopped during onData");
             return ErrConnectionClosed;
         }
 
@@ -117,6 +126,7 @@ public class SocksHandler implements PacketHandler {
 
     @Override
     public byte onClose(UUID connectionId, byte errorCode) {
+        System.out.println("[SocksHandler] onClose: " + connectionId + ", error=" + errorCode);
         Connection value = baseHandler.getConnections().get(connectionId);
         if (value == null) {
             return ErrNone;
@@ -129,29 +139,42 @@ public class SocksHandler implements PacketHandler {
     }
 
     private void processConnection(Connection conn) {
+        System.out.println("[SocksHandler] Processing new SOCKS5 connection: " + conn.getId());
+
         byte errCode;
 
         errCode = handleAuthNegotiation(conn);
         if (errCode != ErrNone) {
+            System.out.println("[SocksHandler] Auth negotiation failed: " + errCode);
             baseHandler.sendClose(conn.getId(), errCode);
             return;
         }
 
         errCode = handleCommand(conn);
         if (errCode != ErrNone) {
+            System.out.println("[SocksHandler] Command handling failed: " + errCode);
             baseHandler.sendClose(conn.getId(), errCode);
             return;
         }
 
         errCode = handleDataTransfer(conn);
         if (errCode != ErrNone) {
+            System.out.println("[SocksHandler] Data transfer finished with error: " + errCode);
             baseHandler.sendClose(conn.getId(), errCode);
         }
     }
 
     private byte handleAuthNegotiation(Connection conn) {
+        System.out.println("[SocksHandler] Starting authentication negotiation");
+
         try {
             byte[] methods = conn.getReadBuffer().take();
+
+            System.out.print("[SocksHandler] Received auth methods: ");
+            for (byte b : methods) {
+                System.out.printf("0x%02X ", b);
+            }
+            System.out.println();
 
             boolean noAuthSupported = false;
             for (byte b : methods) {
@@ -162,15 +185,18 @@ public class SocksHandler implements PacketHandler {
             }
 
             if (!noAuthSupported) {
+                System.out.println("[SocksHandler] No supported auth method");
                 SocksErrorUtil.sendError(baseHandler, conn, ErrAuthFailed);
                 return ErrAuthFailed;
             }
 
             byte[] response = new byte[]{Version5, NoAuth};
+            System.out.println("[SocksHandler] Responding with NO_AUTH");
             return baseHandler.sendData(conn.getId(), response);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            System.out.println("[SocksHandler] Auth negotiation interrupted");
 
             if (conn.getClosed().get()) {
                 return ErrConnectionClosed;
@@ -185,31 +211,48 @@ public class SocksHandler implements PacketHandler {
     }
 
     private byte handleCommand(Connection conn) {
+        System.out.println("[SocksHandler] Waiting for command");
+
         try {
             byte[] cmdData = conn.getReadBuffer().take();
 
             if (cmdData.length < 4) {
+                System.out.println("[SocksHandler] Invalid command data");
                 SocksErrorUtil.sendError(baseHandler, conn, ErrInvalidPacket);
                 return ErrInvalidPacket;
             }
 
             if (cmdData[0] != Version5) {
+                System.out.println("[SocksHandler] Unsupported SOCKS version: " + cmdData[0]);
                 SocksErrorUtil.sendError(baseHandler, conn, ErrInvalidSocksVersion);
                 return ErrInvalidSocksVersion;
             }
 
             byte command = cmdData[1];
+            System.out.println("[SocksHandler] Received command: " + command);
+
             return switch (command) {
-                case Connect -> connectHandler.handle(conn, cmdData);
-                case Bind -> bindHandler.handle(conn, cmdData);
-                case UDPAssociate -> udpHandler.handle(conn);
+                case Connect -> {
+                    System.out.println("[SocksHandler] Handling CONNECT command");
+                    yield connectHandler.handle(conn, cmdData);
+                }
+                case Bind -> {
+                    System.out.println("[SocksHandler] Handling BIND command");
+                    yield bindHandler.handle(conn, cmdData);
+                }
+                case UDPAssociate -> {
+                    System.out.println("[SocksHandler] Handling UDP ASSOCIATE command");
+                    yield udpHandler.handle(conn);
+                }
                 default -> {
+                    System.out.println("[SocksHandler] Unsupported command: " + command);
                     SocksErrorUtil.sendError(baseHandler, conn, ErrUnsupportedCommand);
                     yield ErrUnsupportedCommand;
                 }
             };
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            System.out.println("[SocksHandler] Command handling interrupted");
 
             if (conn.getClosed().get()) {
                 return ErrConnectionClosed;
@@ -224,11 +267,15 @@ public class SocksHandler implements PacketHandler {
     }
 
     private byte handleDataTransfer(Connection conn) {
+        System.out.println("[SocksHandler] Entering data transfer loop");
+
         try {
             conn.awaitClose();
+            System.out.println("[SocksHandler] Connection closed cleanly: " + conn.getId());
             return ErrNone;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            System.out.println("[SocksHandler] Interrupted while waiting for close");
             return ErrHandlerStopped;
         }
     }

@@ -42,7 +42,10 @@ public class SocksConnectHandler {
     private final BaseHandler baseHandler;
 
     public byte handle(Connection conn, byte[] cmdData) {
+        System.out.println("[SocksConnectHandler] Handling CONNECT command...");
+
         if (cmdData == null || cmdData.length < 4) {
+            System.out.println("[SocksConnectHandler] Invalid command data length: " + (cmdData == null ? "null" : cmdData.length));
             byte[] response = new byte[]{
                     Version5, GeneralFailure, 0x00, IPv4, 0, 0, 0, 0, 0, 0
             };
@@ -50,13 +53,14 @@ public class SocksConnectHandler {
             return ErrAddressNotSupported;
         }
 
-        ParsedAddress parsedAddress = SocksAddressParser.parseAddress(
-                Arrays.copyOfRange(cmdData, 3, cmdData.length)
-        );
+        ParsedAddress parsedAddress = SocksAddressParser.parseAddress(Arrays.copyOfRange(cmdData, 3, cmdData.length));
         if (parsedAddress.getErrorCode() != ErrNone) {
+            System.out.println("[SocksConnectHandler] Address parsing failed: " + parsedAddress.getErrorCode());
             SocksErrorUtil.sendError(baseHandler, conn, parsedAddress.getErrorCode());
             return parsedAddress.getErrorCode();
         }
+
+        System.out.println("[SocksConnectHandler] Target: " + parsedAddress.getHostAndPort());
 
         Socket targetSocket;
         byte errCode;
@@ -68,20 +72,25 @@ public class SocksConnectHandler {
             SocketAddress sockaddr = new InetSocketAddress(host, port);
             targetSocket = new Socket();
             targetSocket.connect(sockaddr, 10_000);
+            System.out.println("[SocksConnectHandler] Connected to target: " + host + ":" + port);
 
         } catch (SocketTimeoutException e) {
+            System.out.println("[SocksConnectHandler] Connection timed out");
             errCode = ErrTTLExpired;
             SocksErrorUtil.sendError(baseHandler, conn, errCode);
             return errCode;
         } catch (ConnectException e) {
+            System.out.println("[SocksConnectHandler] Connection refused");
             errCode = ErrConnectionRefused;
             SocksErrorUtil.sendError(baseHandler, conn, errCode);
             return errCode;
         } catch (UnknownHostException | NoRouteToHostException e) {
+            System.out.println("[SocksConnectHandler] Host unreachable: " + e.getMessage());
             errCode = ErrHostUnreachable;
             SocksErrorUtil.sendError(baseHandler, conn, errCode);
             return errCode;
         } catch (IOException e) {
+            System.out.println("[SocksConnectHandler] Network error: " + e.getMessage());
             errCode = ErrNetworkUnreachable;
             SocksErrorUtil.sendError(baseHandler, conn, errCode);
             return errCode;
@@ -101,6 +110,7 @@ public class SocksConnectHandler {
 
         errCode = baseHandler.sendData(conn.getId(), response);
         if (errCode != ErrNone) {
+            System.out.println("[SocksConnectHandler] Failed to send success reply to client, closing target socket");
             try {
                 targetSocket.close();
             } catch (IOException ignored) {
@@ -110,6 +120,7 @@ public class SocksConnectHandler {
 
         conn.setSocket(targetSocket);
         conn.setState(StateConnected);
+        System.out.println("[SocksConnectHandler] Proxy ready, starting TCP data transfer");
 
         return new SocksConnectHandler(baseHandler).handleTCPDataTransfer(conn, targetSocket);
     }
@@ -141,6 +152,7 @@ public class SocksConnectHandler {
                     int read = in.read(buffer);
                     if (read == -1) {
                         errorQueue.put(ErrConnectionClosed);
+                        System.out.println("[SocksConnectHandler] Target closed connection");
                         break;
                     }
 
@@ -148,11 +160,13 @@ public class SocksConnectHandler {
                     targetToClient.put(data);
                 }
             } catch (SocketTimeoutException e) {
+                System.out.println("[SocksConnectHandler] Read timeout from target");
                 try {
                     errorQueue.put(ErrTTLExpired);
                 } catch (InterruptedException ignored) {
                 }
             } catch (IOException | InterruptedException e) {
+                System.out.println("[SocksConnectHandler] Read error: " + e.getMessage());
                 try {
                     errorQueue.put(ErrHostUnreachable);
                 } catch (InterruptedException ignored) {
@@ -164,16 +178,19 @@ public class SocksConnectHandler {
             while (true) {
                 if (conn.getClosed().get()) {
                     tcpConn.close();
+                    System.out.println("[SocksConnectHandler] Connection closed");
                     return ErrNone;
                 }
 
                 if (baseHandler.getContext().isStopped()) {
                     tcpConn.close();
+                    System.out.println("[SocksConnectHandler] Context stopped");
                     return ErrHandlerStopped;
                 }
 
                 Byte err = errorQueue.poll(100, TimeUnit.MILLISECONDS);
                 if (err != null) {
+                    System.out.println("[SocksConnectHandler] Error in target stream: " + err);
                     tcpConn.close();
                     return err;
                 }
@@ -183,9 +200,11 @@ public class SocksConnectHandler {
                     try {
                         tcpConn.getOutputStream().write(toTarget);
                     } catch (SocketTimeoutException e) {
+                        System.out.println("[SocksConnectHandler] Write timeout to target");
                         tcpConn.close();
                         return ErrTTLExpired;
                     } catch (IOException e) {
+                        System.out.println("[SocksConnectHandler] Write error to target: " + e.getMessage());
                         tcpConn.close();
                         return ErrHostUnreachable;
                     }
@@ -195,6 +214,7 @@ public class SocksConnectHandler {
                 if (toClient != null) {
                     byte errCode = baseHandler.sendData(conn.getId(), toClient);
                     if (errCode != ErrNone) {
+                        System.out.println("[SocksConnectHandler] Failed to send to client, errCode=" + errCode);
                         tcpConn.close();
                         return ErrPacketSendFailed;
                     }
@@ -202,10 +222,10 @@ public class SocksConnectHandler {
             }
         } catch (InterruptedException | IOException e) {
             Thread.currentThread().interrupt();
+            System.out.println("[SocksConnectHandler] Interrupted during TCP data loop");
             try {
                 tcpConn.close();
             } catch (IOException ignored) {
-                //TODO что то сделать
             }
             return ErrHandlerStopped;
         }

@@ -53,7 +53,9 @@ public class BaseHandler {
             byte errCode = result.getErrorCode();
 
             if (errCode != ErrNone) {
+                System.out.println("[BaseHandler] receive error: " + errCode);
                 if (transport.isClosed(errCode)) {
+                    System.out.println("[BaseHandler] transport closed, stopping packet handler");
                     packetHandler.stop();
                     return;
                 }
@@ -61,6 +63,7 @@ public class BaseHandler {
                 if (!context.isStopped() && errCode != ErrTransportError) {
                     consecutiveErrors++;
                     if (consecutiveErrors == maxConsecutiveErrors) {
+                        System.out.println("[BaseHandler] too many errors, exiting loop");
                         return;
                     }
                     try {
@@ -76,16 +79,21 @@ public class BaseHandler {
             consecutiveErrors = 0;
 
             if (data == null || data.length == 0) {
+                System.out.println("[BaseHandler] received empty packet");
                 continue;
             }
 
+            System.out.println("[BaseHandler] received packet, size: " + data.length);
             Packet packet = PacketUtil.decode(data);
             if (packet == null) {
+                System.out.println("[BaseHandler] failed to decode packet");
                 continue;
             }
 
+            System.out.println("[BaseHandler] decoded packet: command=" + packet.getCommand() + ", connId=" + packet.getConnectionId());
             byte resultCode = handlePacket(packet);
             if (resultCode != ErrNone) {
+                System.out.println("[BaseHandler] packet handler returned error: " + resultCode);
                 if (!context.isStopped() && resultCode == ErrConnectionClosed) {
                     continue;
                 }
@@ -95,7 +103,10 @@ public class BaseHandler {
     }
 
     private byte handlePacket(Packet packet) {
-        return switch (packet.getCommand()) {
+        byte command = packet.getCommand();
+        System.out.println("[BaseHandler] handling packet command: " + command);
+
+        return switch (command) {
             case CmdNew -> packetHandler.onNew(packet.getConnectionId(), packet.getData());
             case CmdAck -> packetHandler.onAck(packet.getConnectionId(), packet.getData());
             case CmdData -> packetHandler.onData(packet.getConnectionId(), packet.getData());
@@ -103,11 +114,15 @@ public class BaseHandler {
                 byte reason = packet.getData().length > 0 ? packet.getData()[0] : ErrInvalidCommand;
                 yield packetHandler.onClose(packet.getConnectionId(), reason);
             }
-            default -> ErrInvalidCommand;
+            default -> {
+                System.out.println("[BaseHandler] unknown command: " + command);
+                yield ErrInvalidCommand;
+            }
         };
     }
 
     public byte sendNewConnection(UUID connectionId) {
+        System.out.println("[BaseHandler] sendNewConnection: " + connectionId);
         KeyPair keyPair = CryptoUtil.generateKeyPair();
         X25519PrivateKeyParameters privateKey = keyPair.getPrivateKey();
         X25519PublicKeyParameters publicKey = keyPair.getPublicKey();
@@ -118,6 +133,7 @@ public class BaseHandler {
 
         Connection conn = connections.get(connectionId);
         if (conn == null) {
+            System.out.println("[BaseHandler] connection not found: " + connectionId);
             return ErrConnectionNotFound;
         }
 
@@ -134,8 +150,10 @@ public class BaseHandler {
     }
 
     public byte sendConnAck(UUID connectionId) {
+        System.out.println("[BaseHandler] sendConnAck: " + connectionId);
         Connection conn = connections.get(connectionId);
         if (conn == null) {
+            System.out.println("[BaseHandler] connection not found: " + connectionId);
             return ErrConnectionNotFound;
         }
 
@@ -145,6 +163,7 @@ public class BaseHandler {
 
         byte[] serverData = conn.getSecretKey();
         if (serverData == null || serverData.length < CryptoUtil.NONCE_SIZE + CryptoUtil.KEY_SIZE) {
+            System.out.println("[BaseHandler] invalid server data for key exchange");
             return ErrInvalidPacket;
         }
 
@@ -158,6 +177,7 @@ public class BaseHandler {
         CryptoResult result = CryptoUtil.deriveKey(privateKey, serverPublicKey, nonce);
 
         if (result.getData() == null || result.getData().length != CryptoUtil.KEY_SIZE) {
+            System.out.println("[BaseHandler] key derivation failed");
             return result.getStatus();
         }
 
@@ -167,6 +187,7 @@ public class BaseHandler {
     }
 
     public byte sendData(UUID connectionId, byte[] data) {
+        System.out.println("[BaseHandler] sendData: " + connectionId + ", length=" + data.length);
         Connection conn = connections.get(connectionId);
         if (conn == null) {
             return ErrConnectionNotFound;
@@ -174,6 +195,7 @@ public class BaseHandler {
 
         CryptoResult result = CryptoUtil.encrypt(conn.getSecretKey(), data);
         if (result.getStatus() != ErrNone) {
+            System.out.println("[BaseHandler] encryption failed with code: " + result.getStatus());
             return result.getStatus();
         }
 
@@ -181,6 +203,7 @@ public class BaseHandler {
     }
 
     public byte sendClose(UUID connectionId, byte errorCode) {
+        System.out.println("[BaseHandler] sendClose: " + connectionId + ", errorCode=" + errorCode);
         Connection conn = connections.get(connectionId);
         if (conn == null) {
             return ErrConnectionNotFound;
@@ -192,22 +215,26 @@ public class BaseHandler {
 
     private byte sendPacket(byte cmd, UUID connectionId, byte[] data) {
         if (context.isStopped()) {
+            System.out.println("[BaseHandler] context is stopped, cannot send packet");
             return ErrHandlerStopped;
         }
 
         byte[] encoded = PacketUtil.encode(cmd, connectionId, data);
         if (encoded == null) {
+            System.out.println("[BaseHandler] failed to encode packet");
             return ErrInvalidPacket;
         }
 
         byte errCode = transport.send(encoded);
         if (errCode != ErrNone) {
+            System.out.println("[BaseHandler] send failed with error code: " + errCode);
             if (transport.isClosed(errCode)) {
                 return ErrTransportClosed;
             }
             return ErrPacketSendFailed;
         }
 
+        System.out.println("[BaseHandler] packet sent: cmd=" + cmd + ", connId=" + connectionId + ", len=" + data.length);
         return ErrNone;
     }
 
@@ -216,6 +243,7 @@ public class BaseHandler {
             Connection conn = entry.getValue();
 
             if (!conn.getClosed().get()) {
+                System.out.println("[BaseHandler] closing connection: " + entry.getKey());
                 conn.close();
             }
         }

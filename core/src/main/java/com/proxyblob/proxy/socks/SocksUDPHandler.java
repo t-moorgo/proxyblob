@@ -38,10 +38,14 @@ public class SocksUDPHandler {
     private final BaseHandler baseHandler;
 
     public byte handle(Connection conn) {
+        System.out.println("[SocksUDPHandler] Starting UDP handler...");
+
         DatagramSocket udpSocket;
         try {
             udpSocket = new DatagramSocket(new InetSocketAddress("0.0.0.0", 0));
+            System.out.println("[SocksUDPHandler] UDP socket bound to port: " + udpSocket.getLocalPort());
         } catch (SocketException e) {
+            System.out.println("[SocksUDPHandler] Failed to bind UDP socket: " + e.getMessage());
             byte errCode = ErrGeneralSocksFailure;
             if (e.getMessage() != null) {
                 String msg = e.getMessage().toLowerCase();
@@ -68,12 +72,14 @@ public class SocksUDPHandler {
 
         byte errCode = baseHandler.sendData(conn.getId(), response.toByteArray());
         if (errCode != ErrNone) {
+            System.out.println("[SocksUDPHandler] Failed to send UDP associate response");
             udpSocket.close();
             return ErrPacketSendFailed;
         }
 
         conn.setDatagramSocket(udpSocket);
         conn.setState(StateConnected);
+        System.out.println("[SocksUDPHandler] UDP Associate success. Starting packet handling...");
 
         baseHandler.getContext().getGeneralExecutor().submit(() ->
                 new SocksUDPHandler(baseHandler).handleUDPPackets(conn)
@@ -88,6 +94,7 @@ public class SocksUDPHandler {
         }
 
         udpSocket.close();
+        System.out.println("[SocksUDPHandler] UDP socket closed.");
         return ErrNone;
     }
 
@@ -99,7 +106,9 @@ public class SocksUDPHandler {
         DatagramSocket targetConn;
         try {
             targetConn = new DatagramSocket();
+            System.out.println("[SocksUDPHandler] Created socket to talk to target");
         } catch (SocketException e) {
+            System.out.println("[SocksUDPHandler] Failed to create target UDP socket: " + e.getMessage());
             baseHandler.sendClose(conn.getId(), ErrNetworkUnreachable);
             return;
         }
@@ -111,12 +120,12 @@ public class SocksUDPHandler {
                 }
             } catch (InterruptedException ignored) {
             } finally {
+                System.out.println("[SocksUDPHandler] Target socket watcher stopping");
                 targetConn.close();
             }
         });
 
         ConcurrentHashMap<String, TargetInfo> targets = new ConcurrentHashMap<>();
-
         BlockingQueue<ResponsePacket> responses = new LinkedBlockingQueue<>(100);
 
         baseHandler.getContext().getGeneralExecutor().submit(() -> {
@@ -141,9 +150,9 @@ public class SocksUDPHandler {
                             .addr(addr)
                             .build();
                     responses.offer(response);
-
                 } catch (IOException e) {
                     if (targetConn.isClosed()) return;
+                    System.out.println("[SocksUDPHandler] Error receiving from target: " + e.getMessage());
                 }
             }
         });
@@ -160,33 +169,17 @@ public class SocksUDPHandler {
                 }
 
                 if (resp != null) {
-                    boolean found = false;
-                    for (TargetInfo target : targets.values()) {
-                        if (target.getAddr().getAddress().equals(resp.getAddr().getAddress())
-                                && target.getAddr().getPort() == resp.getAddr().getPort()) {
-                            String targetKey = resp.getAddr().getAddress().getHostAddress() + ":" + resp.getAddr().getPort();
+                    if (clientAddr == null) continue;
 
-                            TargetInfo targetInfo = TargetInfo.builder()
-                                    .addr(resp.getAddr())
-                                    .lastActive(Instant.now())
-                                    .build();
-                            targets.put(targetKey, targetInfo);
-                            found = true;
-                            break;
-                        }
-                    }
+                    String targetKey = resp.getAddr().getAddress().getHostAddress() + ":" + resp.getAddr().getPort();
+                    TargetInfo targetInfo = TargetInfo.builder()
+                            .addr(resp.getAddr())
+                            .lastActive(Instant.now())
+                            .build();
+                    targets.put(targetKey, targetInfo);
 
-                    if (!found || clientAddr == null) {
-                        continue;
-                    }
-
-                    byte addrType;
+                    byte addrType = (byte) (resp.getAddr().getAddress().getAddress().length == 4 ? 0x01 : 0x04);
                     byte[] addrBytes = resp.getAddr().getAddress().getAddress();
-                    if (addrBytes.length == 4) {
-                        addrType = (byte) 0x01;
-                    } else {
-                        addrType = (byte) 0x04;
-                    }
 
                     ByteArrayOutputStream header = new ByteArrayOutputStream();
                     header.write(new byte[]{0, 0, 0, addrType});
@@ -201,8 +194,10 @@ public class SocksUDPHandler {
                     DatagramPacket outPacket = new DatagramPacket(fullPacket, fullPacket.length, clientAddr);
                     try {
                         udpConn.send(outPacket);
+                        System.out.println("[SocksUDPHandler] Sent data to client from: " + targetKey);
                     } catch (IOException e) {
                         if (udpConn.isClosed()) return;
+                        System.out.println("[SocksUDPHandler] Error sending to client: " + e.getMessage());
                     }
                     continue;
                 }
@@ -216,6 +211,7 @@ public class SocksUDPHandler {
 
                     if (clientAddr == null) {
                         clientAddr = remoteAddr;
+                        System.out.println("[SocksUDPHandler] First UDP packet received from client: " + clientAddr);
                     }
 
                     if (!remoteAddr.getAddress().equals(clientAddr.getAddress())) {
@@ -233,6 +229,7 @@ public class SocksUDPHandler {
 
                     String[] parts = targetAddr.split(":");
                     if (parts.length != 2) continue;
+
                     InetSocketAddress targetUDPAddr;
                     try {
                         targetUDPAddr = new InetSocketAddress(parts[0], Integer.parseInt(parts[1]));
@@ -241,7 +238,6 @@ public class SocksUDPHandler {
                     }
 
                     String targetKey = targetUDPAddr.getAddress().getHostAddress() + ":" + targetUDPAddr.getPort();
-
                     TargetInfo targetInfo = TargetInfo.builder()
                             .addr(targetUDPAddr)
                             .lastActive(Instant.now())
@@ -251,16 +247,21 @@ public class SocksUDPHandler {
                     byte[] payload = Arrays.copyOfRange(received, headerLen, received.length);
                     DatagramPacket targetPacket = new DatagramPacket(payload, payload.length, targetUDPAddr);
                     targetConn.send(targetPacket);
+
+                    System.out.println("[SocksUDPHandler] Sent packet to target: " + targetKey);
                 } catch (SocketTimeoutException ignore) {
                     //TODO что то сделать
                 } catch (IOException e) {
+                    System.out.println("[SocksUDPHandler] Error in main loop: " + e.getMessage());
                     baseHandler.sendClose(conn.getId(), ErrNetworkUnreachable);
                     return;
                 }
             }
         } catch (IOException e) {
+            System.out.println("[SocksUDPHandler] Fatal error: " + e.getMessage());
             throw new RuntimeException(e);
         } finally {
+            System.out.println("[SocksUDPHandler] Closing UDP sockets");
             udpConn.close();
         }
     }

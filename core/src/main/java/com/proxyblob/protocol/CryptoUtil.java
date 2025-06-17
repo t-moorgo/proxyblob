@@ -40,6 +40,8 @@ public class CryptoUtil {
         X25519PrivateKeyParameters privateKey = new X25519PrivateKeyParameters(privateBytes, 0);
         X25519PublicKeyParameters publicKey = privateKey.generatePublicKey();
 
+        System.out.println("[CryptoUtil] Generated X25519 key pair");
+
         return KeyPair.builder()
                 .privateKey(privateKey)
                 .publicKey(publicKey)
@@ -49,6 +51,7 @@ public class CryptoUtil {
     public static byte[] generateNonce() {
         byte[] nonce = new byte[NONCE_SIZE];
         SECURE_RANDOM.nextBytes(nonce);
+        System.out.println("[CryptoUtil] Generated nonce: " + bytesToHex(nonce));
         return nonce;
     }
 
@@ -56,15 +59,18 @@ public class CryptoUtil {
         try {
             byte[] sharedSecret = new byte[KEY_SIZE];
             privateKey.generateSecret(peerPublicKey, sharedSecret, 0);
+            System.out.println("[CryptoUtil] Derived shared secret");
 
             HKDFBytesGenerator hkdf = new HKDFBytesGenerator(new SHA3Digest(256));
             hkdf.init(new HKDFParameters(sharedSecret, nonce, null));
 
             byte[] derivedKey = new byte[KEY_SIZE];
             hkdf.generateBytes(derivedKey, 0, KEY_SIZE);
+            System.out.println("[CryptoUtil] Derived key using HKDF");
 
             return ok(derivedKey);
         } catch (Exception e) {
+            System.out.println("[CryptoUtil] Error in deriveKey: " + e.getMessage());
             return error();
         }
     }
@@ -85,14 +91,18 @@ public class CryptoUtil {
             System.arraycopy(nonce, 0, result, 0, nonce.length);
             System.arraycopy(output, 0, result, nonce.length, output.length);
 
+            System.out.println("[CryptoUtil] Encrypted data: plaintext=" + plaintext.length + " bytes, ciphertext=" + result.length + " bytes");
+
             return ok(result);
         } catch (Exception e) {
+            System.out.println("[CryptoUtil] Error in encrypt: " + e.getMessage());
             return error();
         }
     }
 
     public static CryptoResult decrypt(byte[] key, byte[] ciphertext) {
         if (ciphertext.length < NONCE_SIZE) {
+            System.out.println("[CryptoUtil] Invalid ciphertext length: too short");
             return error();
         }
 
@@ -110,8 +120,10 @@ public class CryptoUtil {
             int len = cipher.processBytes(encrypted, 0, encrypted.length, output, 0);
             cipher.doFinal(output, len);
 
+            System.out.println("[CryptoUtil] Successfully decrypted data: " + output.length + " bytes");
             return ok(output);
         } catch (InvalidCipherTextException e) {
+            System.out.println("[CryptoUtil] Invalid ciphertext: " + e.getMessage());
             return error();
         }
     }
@@ -120,6 +132,7 @@ public class CryptoUtil {
         for (int i = 0; i < data.length; i++) {
             data[i] ^= key[i % key.length];
         }
+        System.out.println("[CryptoUtil] XOR applied: dataLength=" + data.length + ", keyLength=" + key.length);
         return data;
     }
 
@@ -135,5 +148,13 @@ public class CryptoUtil {
                 .data(data)
                 .status(ErrNone)
                 .build();
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 }

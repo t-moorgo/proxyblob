@@ -34,9 +34,10 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrNetworkUnreachable;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrPacketSendFailed;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrTransportTimeout;
-import static com.proxyblob.errorcodes.ErrorCodes.ErrUnexpectedPacket;
 import static com.proxyblob.protocol.Connection.StateConnected;
 import static com.proxyblob.protocol.Connection.StateNew;
+import static com.proxyblob.protocol.CryptoUtil.KEY_SIZE;
+import static com.proxyblob.protocol.CryptoUtil.NONCE_SIZE;
 
 @Getter
 public class ProxyServer implements PacketHandler {
@@ -118,25 +119,25 @@ public class ProxyServer implements PacketHandler {
             return ErrInvalidState;
         }
 
-        if (data == null || data.length < 32) {
+        if (data == null || data.length < KEY_SIZE) {
             return ErrInvalidPacket;
         }
 
-        byte[] clientPublicKey = Arrays.copyOfRange(data, 0, 32);
+        byte[] clientPublicKey = Arrays.copyOfRange(data, 0, KEY_SIZE);
         byte[] serverData = conn.getSecretKey();
-        if (serverData == null || serverData.length != 56) {
+        if (serverData == null || serverData.length != NONCE_SIZE+KEY_SIZE) {
             return ErrInvalidPacket;
         }
 
-        byte[] nonce = Arrays.copyOfRange(serverData, 0, 24);
-        byte[] serverPrivateKey = Arrays.copyOfRange(serverData, 24, 56);
+        byte[] nonce = Arrays.copyOfRange(serverData, 0, NONCE_SIZE);
+        byte[] serverPrivateKey = Arrays.copyOfRange(serverData, NONCE_SIZE, NONCE_SIZE+KEY_SIZE);
 
         CryptoResult result = CryptoUtil.deriveKey(
                 new X25519PrivateKeyParameters(serverPrivateKey, 0),
                 new X25519PublicKeyParameters(clientPublicKey, 0),
                 nonce
         );
-        if (result.getData() == null || result.getData().length != CryptoUtil.KEY_SIZE) {
+        if (result.getData() == null || result.getData().length != KEY_SIZE) {
             return result.getStatus();
         }
 

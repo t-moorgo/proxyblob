@@ -147,6 +147,10 @@ public class BaseHandler {
         byte[] dataToSend = new byte[nonce.length + publicKeyBytes.length];
         System.arraycopy(nonce, 0, dataToSend, 0, nonce.length);
         System.arraycopy(publicKeyBytes, 0, dataToSend, nonce.length, publicKeyBytes.length);
+        System.out.println("privateKey.length = " + privateKeyBytes.length); // 32
+        System.out.println("nonce.length = " + nonce.length); // 12
+        System.out.println("secret.length = " + secretData.length); // 44
+
 
         return sendPacket(CmdNew, connectionId, dataToSend);
     }

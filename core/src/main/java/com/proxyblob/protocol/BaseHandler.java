@@ -27,6 +27,7 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrPacketSendFailed;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrTransportClosed;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrTransportError;
+import static com.proxyblob.protocol.CryptoUtil.bytesToHex;
 import static com.proxyblob.protocol.PacketUtil.CmdAck;
 import static com.proxyblob.protocol.PacketUtil.CmdClose;
 import static com.proxyblob.protocol.PacketUtil.CmdData;
@@ -124,33 +125,35 @@ public class BaseHandler {
     public byte sendNewConnection(UUID connectionId) {
         System.out.println("[BaseHandler] sendNewConnection: " + connectionId);
 
-        // Генерируем пару ключей X25519
         KeyPair keyPair = CryptoUtil.generateKeyPair();
-        byte[] privateKeyBytes = keyPair.getPrivateKey().getEncoded();
+        X25519PrivateKeyParameters privateKey = keyPair.getPrivateKey();
+        byte[] privateKeyBytes = privateKey.getEncoded();
         byte[] publicKeyBytes = keyPair.getPublicKey().getEncoded();
         byte[] nonce = CryptoUtil.generateNonce();
 
-        // Получаем соединение
+        // Сохраняем nonce + privateKey (используется только прокси при deriveKey)
+        byte[] secret = new byte[nonce.length + privateKeyBytes.length];
+        System.arraycopy(nonce, 0, secret, 0, nonce.length);
+        System.arraycopy(privateKeyBytes, 0, secret, nonce.length, privateKeyBytes.length);
         Connection conn = connections.get(connectionId);
         if (conn == null) {
             System.out.println("[BaseHandler] connection not found: " + connectionId);
             return ErrConnectionNotFound;
         }
+        conn.setSecretKey(secret);
 
-        // Собираем данные (nonce + privateKey), сохраняем как secretKey
-        byte[] secretData = new byte[nonce.length + privateKeyBytes.length];
-        System.arraycopy(nonce, 0, secretData, 0, nonce.length);
-        System.arraycopy(privateKeyBytes, 0, secretData, nonce.length, privateKeyBytes.length);
-        conn.setSecretKey(secretData);
-
-        // Отправляем клиенту (агенту) CmdNew с nonce + publicKey
+        // Отправляем агенту nonce + publicKey (agent будет deriveKey с ними)
         byte[] dataToSend = new byte[nonce.length + publicKeyBytes.length];
         System.arraycopy(nonce, 0, dataToSend, 0, nonce.length);
         System.arraycopy(publicKeyBytes, 0, dataToSend, nonce.length, publicKeyBytes.length);
-        System.out.println("privateKey.length = " + privateKeyBytes.length); // 32
-        System.out.println("nonce.length = " + nonce.length); // 12
-        System.out.println("secret.length = " + secretData.length); // 44
 
+        // Отладка
+        System.out.println("privateKey.length = " + privateKeyBytes.length);
+        System.out.println("nonce.length = " + nonce.length);
+        System.out.println("secret.length = " + secret.length);
+        System.out.println("sending to agent:");
+        System.out.println("  nonce: " + bytesToHex(nonce));
+        System.out.println("  publicKey: " + bytesToHex(publicKeyBytes));
 
         return sendPacket(CmdNew, connectionId, dataToSend);
     }
@@ -167,7 +170,8 @@ public class BaseHandler {
         X25519PrivateKeyParameters privateKey = keyPair.getPrivateKey();
         byte[] publicKeyBytes = keyPair.getPublicKey().getEncoded();
 
-        byte[] serverData = conn.getSecretKey();
+        // Получаем nonce + serverPublicKey из data (agent получил это от прокси)
+        byte[] serverData = conn.getSecretKey(); // это то, что пришло через CmdNew
         if (serverData == null || serverData.length < CryptoUtil.NONCE_SIZE + CryptoUtil.KEY_SIZE) {
             System.out.println("[BaseHandler] invalid server data for key exchange");
             return ErrInvalidPacket;
@@ -175,13 +179,16 @@ public class BaseHandler {
 
         byte[] nonce = new byte[CryptoUtil.NONCE_SIZE];
         byte[] serverPublicKeyBytes = new byte[CryptoUtil.KEY_SIZE];
-
         System.arraycopy(serverData, 0, nonce, 0, CryptoUtil.NONCE_SIZE);
         System.arraycopy(serverData, CryptoUtil.NONCE_SIZE, serverPublicKeyBytes, 0, CryptoUtil.KEY_SIZE);
 
+        // Отладка
+        System.out.println("receiving from proxy:");
+        System.out.println("  nonce: " + bytesToHex(nonce));
+        System.out.println("  serverPublicKey: " + bytesToHex(serverPublicKeyBytes));
+
         X25519PublicKeyParameters serverPublicKey = new X25519PublicKeyParameters(serverPublicKeyBytes, 0);
         CryptoResult result = CryptoUtil.deriveKey(privateKey, serverPublicKey, nonce);
-
         if (result.getData() == null || result.getData().length != CryptoUtil.KEY_SIZE) {
             System.out.println("[BaseHandler] key derivation failed");
             return result.getStatus();

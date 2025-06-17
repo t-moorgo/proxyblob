@@ -150,7 +150,7 @@ public class CryptoUtil {
                 .build();
     }
 
-    private static String bytesToHex(byte[] bytes) {
+    public static String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) {
             sb.append(String.format("%02x", b));

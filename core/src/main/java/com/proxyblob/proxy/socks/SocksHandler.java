@@ -151,11 +151,20 @@ public class SocksHandler implements PacketHandler {
 
     private byte handleAuthNegotiation(Connection conn) {
         try {
-            byte[] methods = conn.getReadBuffer().take();
+            byte[] data = conn.getReadBuffer().take();
+
+            if (data.length < 2 || data[0] != Version5) {
+                return ErrInvalidSocksVersion;
+            }
+
+            int nMethods = data[1] & 0xFF;
+            if (data.length < 2 + nMethods) {
+                return ErrInvalidPacket;
+            }
 
             boolean noAuthSupported = false;
-            for (byte b : methods) {
-                if (b == NoAuth) {
+            for (int i = 0; i < nMethods; i++) {
+                if (data[2 + i] == NoAuth) {
                     noAuthSupported = true;
                     break;
                 }
@@ -171,15 +180,6 @@ public class SocksHandler implements PacketHandler {
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-
-            if (conn.getClosed().get()) {
-                return ErrConnectionClosed;
-            }
-
-            if (context.isStopped()) {
-                return ErrHandlerStopped;
-            }
-
             return ErrHandlerStopped;
         }
     }

@@ -230,6 +230,17 @@ public class ProxyServer implements PacketHandler {
             proxyConn.setLastActivity(Instant.now());
 
             BlockingQueue<Byte> errQueue = new ArrayBlockingQueue<>(2);
+            context.getGeneralExecutor().submit(() -> {
+                try {
+                    byte[] buf = new byte[4096];
+                    int read = clientSocket.getInputStream().read(buf);
+                    if (read > 0) {
+                        proxyConn.getReadBuffer().put(Arrays.copyOf(buf, read));
+                    }
+                } catch (IOException | InterruptedException e) {
+                    e.printStackTrace();
+                }
+            });
 
             context.getGeneralExecutor().submit(() -> forwardToAgent(clientSocket, proxyConn, errQueue));
             context.getGeneralExecutor().submit(() -> forwardToClient(clientSocket, proxyConn, errQueue));

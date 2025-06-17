@@ -120,6 +120,7 @@ public class SocksConnectHandler {
 
         conn.setSocket(targetSocket);
         conn.setState(StateConnected);
+        baseHandler.getConnections().put(conn.getId(), conn);
         System.out.println("[SocksConnectHandler] Proxy ready, starting TCP data transfer");
 
         return new SocksConnectHandler(baseHandler).handleTCPDataTransfer(conn, targetSocket);

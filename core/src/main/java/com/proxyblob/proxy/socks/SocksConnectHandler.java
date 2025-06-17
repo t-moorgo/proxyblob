@@ -68,6 +68,7 @@ public class SocksConnectHandler {
             String[] parts = parsedAddress.getHostAndPort().split(":");
             String host = parts[0];
             int port = Integer.parseInt(parts[1]);
+            System.out.printf("👉 Trying to connect to: %s:%d\n", host, port);
 
             SocketAddress sockaddr = InetSocketAddress.createUnresolved(host, port);
             targetSocket = new Socket();
@@ -75,21 +76,28 @@ public class SocksConnectHandler {
             System.out.println("[SocksConnectHandler] Connected to target: " + host + ":" + port);
 
         } catch (SocketTimeoutException e) {
+            System.out.println("⏱️ Timeout: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             System.out.println("[SocksConnectHandler] Connection timed out");
             errCode = ErrTTLExpired;
             SocksErrorUtil.sendError(baseHandler, conn, errCode);
             return errCode;
         } catch (ConnectException e) {
+            System.out.println("❌ ConnectException: " + e.getMessage());
+
             System.out.println("[SocksConnectHandler] Connection refused");
             errCode = ErrConnectionRefused;
             SocksErrorUtil.sendError(baseHandler, conn, errCode);
             return errCode;
         } catch (UnknownHostException | NoRouteToHostException e) {
+            System.out.println("🚫 UnknownHost or NoRoute: " + e.getMessage());
+
             System.out.println("[SocksConnectHandler] Host unreachable: " + e.getMessage());
             errCode = ErrHostUnreachable;
             SocksErrorUtil.sendError(baseHandler, conn, errCode);
             return errCode;
         } catch (IOException e) {
+            System.out.println("🌐 General IOException: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+
             System.out.println("[SocksConnectHandler] Network error: " + e.getMessage());
             errCode = ErrNetworkUnreachable;
             SocksErrorUtil.sendError(baseHandler, conn, errCode);

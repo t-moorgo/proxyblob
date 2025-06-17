@@ -21,6 +21,8 @@ import static com.proxyblob.errorcodes.ErrorCodes.ErrInvalidSocksVersion;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrNone;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrUnexpectedPacket;
 import static com.proxyblob.errorcodes.ErrorCodes.ErrUnsupportedCommand;
+import static com.proxyblob.protocol.CryptoUtil.KEY_SIZE;
+import static com.proxyblob.protocol.CryptoUtil.NONCE_SIZE;
 import static com.proxyblob.proxy.socks.SocksConstants.Bind;
 import static com.proxyblob.proxy.socks.SocksConstants.Connect;
 import static com.proxyblob.proxy.socks.SocksConstants.NoAuth;
@@ -64,20 +66,22 @@ public class SocksHandler implements PacketHandler {
     @Override
     public byte onNew(UUID connectionId, byte[] data) {
         System.out.println("[SocksHandler] onNew: " + connectionId);
+
         if (baseHandler.getConnections().containsKey(connectionId)) {
             System.out.println("[SocksHandler] Connection already exists");
             return ErrConnectionExists;
         }
 
+        if (data.length != CryptoUtil.NONCE_SIZE + CryptoUtil.KEY_SIZE) {
+            System.out.println("[SocksHandler] Invalid NEW packet data length: " + data.length);
+            return ErrInvalidPacket;
+        }
+
         Connection conn = new Connection(connectionId);
+        conn.setSecretKey(data); // <- Сохраняем nonce + publicKey от прокси
         baseHandler.getConnections().put(connectionId, conn);
 
-        if (data.length >= 24 + 32) {
-            byte[] tmp = new byte[56];
-            System.arraycopy(data, 0, tmp, 0, 56);
-            conn.setSecretKey(tmp);
-            System.out.println("[SocksHandler] Received key exchange data (nonce + serverPubKey)");
-        }
+        System.out.println("[SocksHandler] Received key exchange data (nonce + serverPubKey)");
 
         byte errCode = baseHandler.sendConnAck(connectionId);
         if (errCode != ErrNone) {

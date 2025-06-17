@@ -221,7 +221,7 @@ public class ProxyServer implements PacketHandler {
             if (ack == null) {
                 byte closeReason = context.isStopped() ? ErrHandlerStopped : ErrTransportTimeout;
                 baseHandler.sendClose(connId, closeReason);
-                baseHandler.getConnections().remove(connId);
+                // ❗ НЕ удаляй connection здесь — ACK может ещё прийти
                 return;
             }
 

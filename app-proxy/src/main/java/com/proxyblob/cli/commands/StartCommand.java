@@ -22,7 +22,7 @@ public class StartCommand implements Runnable {
     @CommandLine.Option(
             names = {"-l", "--listen"},
             description = "Listen address for SOCKS server",
-            defaultValue = "127.0.0.1:1080"
+            defaultValue = "0.0.0.0:1080"
     )
     private String listenAddress;
 
